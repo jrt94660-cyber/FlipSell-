@@ -1,20 +1,21 @@
 # FlipSell
 
-Paper 26.3 selling GUI and limited-use Sell Wand plugin.
+Paper selling GUI and limited-use Sell Wand plugin.
 
-## Version 1.0.3
+## Version 1.0.4
 
-- The sell button now shows exactly one lore line: green dollar sign and white abbreviated total, for example `&a$ &f12.01k`. No item count, action hint, labels, or extra lore lines.
-- Large totals use compact suffixes: `k`, `m`, `b`, and `t`.
-- The six-row GUI has no filler glass and keeps the lime stained-glass sell button in the bottom-right slot.
-- Items in the sell area show their total worth; material prices apply even to renamed items.
+- Compiled against Paper API `1.21.11` and Java 21 to support Paper versions from 1.21.11 through 26.3 (newer versions use Java 25 to run their server; Java 21 bytecode remains compatible).
+- The sell button shows exactly one lore line, with a green dollar sign and white abbreviated payout, such as `&a$ &f12.01k`. No count, description, or extra lore lines.
+- Uses compact amount suffixes `k`, `m`, `b`, and `t`.
+- The six-row GUI has no filler panes and keeps a lime stained-glass sell button at the bottom-right.
+- Each item in the sell menu gets a total stack worth. Material prices apply even when an item has a custom name.
 - Shift-clicking supports moving items into and out of the sell area.
-- Sell Wand retains small Unicode name and left/right-click chest selling.
+- The small-text Sell Wand sells priced chest contents on left- or right-click and preserves unsellable items.
 
 ## Requirements
 
-- Paper 26.3
-- Java 25
+- Paper 1.21.11 through Paper 26.3
+- Java 21 to compile/run on Paper 1.21.11; Paper 26.x servers themselves require Java 25.
 - Vault and a Vault-compatible economy plugin
 
 ## Commands
@@ -27,6 +28,6 @@ Paper 26.3 selling GUI and limited-use Sell Wand plugin.
 
 ## Prices
 
-Edit `plugins/FlipSell/price.yml`. Prices are per item. A stack's total is its unit price multiplied by amount. For example, `CARROT: 1.0` makes two carrots worth $2.00 and 64 worth $64.00. Renamed items are priced using their material type. Set a material to `0.0` to disable selling it.
+Edit `plugins/FlipSell/price.yml`. Prices are per item. The stack worth is its unit price multiplied by the stack amount. For example, `CARROT: 1.0` makes two carrots worth $2.00 and 64 worth $64.00. Renamed items are priced using material type. Set a material to `0.0` to disable selling it.
 
-Install the JAR in `plugins/` and restart the server.
+Install the JAR in the server's `plugins/` folder and restart.
