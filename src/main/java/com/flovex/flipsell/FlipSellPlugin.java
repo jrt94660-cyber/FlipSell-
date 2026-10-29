@@ -299,11 +299,9 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
         Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "LIME_STAINED_GLASS_PANE"), Material.LIME_STAINED_GLASS_PANE);
         String name = color(getConfig().getString("settings.sell-button-name", "&a&lSELL ITEMS"));
-        final int displayedItems = itemCount;
-        final double displayedTotal = total;
-        List<String> lore = getConfig().getStringList("settings.sell-button-lore").stream()
-                .map(s -> color(s.replace("{items}", Integer.toString(displayedItems)).replace("{total}", money(displayedTotal)))).toList();
-        if (lore.isEmpty()) lore = List.of(color("&7Items: &f" + itemCount), color("&7Total: &a" + money(total)), color("&eClick to sell"));
+        // The sell button has exactly one lore line, with no extra text or item count.
+        // Example: "&a$ &f12.01k"
+        List<String> lore = List.of(color("&a$ &f" + compactAmount(total)));
         inventory.setItem(SELL_SLOT, namedItem(buttonMaterial, name, lore));
     }
 
@@ -454,6 +452,23 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         DecimalFormat format = new DecimalFormat(pattern.toString(), symbols);
         format.setGroupingUsed(true);
         return format.format(amount);
+    }
+
+    private String compactAmount(double amount) {
+        double value = Math.max(0.0, amount);
+        String[] suffixes = {"", "k", "m", "b", "t"};
+        int suffix = 0;
+        while (value >= 1000.0 && suffix < suffixes.length - 1) {
+            value /= 1000.0;
+            suffix++;
+        }
+        // Normalize rounding boundaries (e.g. 999,999 -> 1.00m instead of 1000.00k).
+        if (suffix < suffixes.length - 1 && value >= 999.995) {
+            value /= 1000.0;
+            suffix++;
+        }
+        DecimalFormat compact = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US));
+        return compact.format(value) + suffixes[suffix];
     }
 
     private String money(double amount) {
