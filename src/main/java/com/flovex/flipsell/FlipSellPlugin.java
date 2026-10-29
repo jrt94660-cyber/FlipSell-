@@ -170,6 +170,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                         }
                     } else if (raw >= 0 && raw < INPUT_SLOTS) {
                         ItemStack moving = current.clone();
+                        stripPreview(moving);
                         Map<Integer, ItemStack> leftovers = player.getInventory().addItem(moving);
                         int left = leftovers.values().stream().mapToInt(ItemStack::getAmount).sum();
                         int moved = current.getAmount() - left;
@@ -181,7 +182,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                         }
                     }
                 }
-                Bukkit.getScheduler().runTask(this, () -> refreshPreview(holder.getInventory()));
+                Bukkit.getScheduler().runTask(this, () -> {
+                    cleanPlayerPreview(player);
+                    refreshPreview(holder.getInventory());
+                });
             }
             return;
         }
