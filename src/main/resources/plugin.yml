@@ -1,0 +1,31 @@
+name: FlipSell
+version: 1.0.0
+main: com.flovex.flipsell.FlipSellPlugin
+api-version: '26.3'
+authors: [FlovexSMP]
+description: Six-row sell GUI with editable prices and limited-use chest sell wands.
+softdepend: [Vault]
+commands:
+  sell:
+    description: Opens the FlipSell selling menu.
+    usage: /sell
+    aliases: [sellgui]
+    permission: flipsell.sell
+  sellwand:
+    description: Gives a limited-use Sell Wand.
+    usage: /sellwand give <player> <uses>
+    permission: flipsell.sellwand.give
+  flipsell:
+    description: FlipSell admin commands.
+    usage: /flipsell reload
+    permission: flipsell.admin
+permissions:
+  flipsell.sell:
+    description: Allows use of /sell.
+    default: true
+  flipsell.sellwand.give:
+    description: Allows giving Sell Wands.
+    default: op
+  flipsell.admin:
+    description: Allows reloading FlipSell.
+    default: op
