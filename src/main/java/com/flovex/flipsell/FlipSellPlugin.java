@@ -161,7 +161,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                 ItemStack current = event.getCurrentItem();
                 if (current != null && !current.getType().isAir()) {
                     if (raw >= GUI_SIZE) {
-                        int moved = moveIntoSellInput(holder.getInventory(), current.clone());
+                        // Clear temporary worth lore before stack similarity checks, so equal items merge normally.
+                        stripPreviewFromInventory(holder.getInventory());
+                        ItemStack moving = current.clone();
+                        stripPreview(moving);
+                        int moved = moveIntoSellInput(holder.getInventory(), moving);
                         if (moved >= current.getAmount()) {
                             event.setCurrentItem(null);
                         } else if (moved > 0) {
