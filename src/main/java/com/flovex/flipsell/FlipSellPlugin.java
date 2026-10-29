@@ -137,9 +137,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         String title = color(getConfig().getString("settings.gui-title", "&8Sell Items"));
         Inventory inventory = Bukkit.createInventory(holder, GUI_SIZE, title);
         holder.setInventory(inventory);
-        Material filler = parseMaterial(getConfig().getString("settings.filler-material", "BLACK_STAINED_GLASS_PANE"), Material.BLACK_STAINED_GLASS_PANE);
-        ItemStack pane = namedItem(filler, " ", List.of());
-        for (int slot = INPUT_SLOTS; slot < GUI_SIZE; slot++) if (slot != SELL_SLOT) inventory.setItem(slot, pane.clone());
+        // Leave the GUI background empty: no filler glass panes.
         openMenus.put(player.getUniqueId(), holder);
         refreshPreview(inventory);
         player.openInventory(inventory);
@@ -252,27 +250,15 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                 ItemMeta meta = item.getItemMeta();
                 if (meta != null) {
                     List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-                    lore.add(color("&0FS_PREVIEW"));
-                    lore.add(color("&8FlipSell Preview"));
-                    lore.add(color("&7Price each: &a" + money(unit)));
-                    lore.add(color("&7Stack total: &a" + money(stackTotal)));
-                    meta.setLore(lore);
-                    meta.getPersistentDataContainer().set(previewKey, PersistentDataType.BYTE, (byte) 1);
-                    item.setItemMeta(meta);
-                }
-            } else {
-                ItemMeta meta = item.getItemMeta();
-                if (meta != null) {
-                    List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-                    lore.add(color("&0FS_PREVIEW"));
-                    lore.add(color("&cNo sell price configured"));
+                    // Single tooltip line only: green currency symbol, white stack payout.
+                    lore.add(color("&a" + getConfig().getString("settings.currency-symbol", "$") + "&f" + formatAmount(stackTotal)));
                     meta.setLore(lore);
                     meta.getPersistentDataContainer().set(previewKey, PersistentDataType.BYTE, (byte) 1);
                     item.setItemMeta(meta);
                 }
             }
         }
-        Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "EMERALD_BLOCK"), Material.EMERALD_BLOCK);
+        Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "LIME_STAINED_GLASS_PANE"), Material.LIME_STAINED_GLASS_PANE);
         String name = color(getConfig().getString("settings.sell-button-name", "&a&lSELL ITEMS"));
         final int displayedItems = itemCount;
         final double displayedTotal = total;
@@ -298,12 +284,16 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         ItemMeta meta = item.getItemMeta();
         if (meta == null || !meta.getPersistentDataContainer().has(previewKey, PersistentDataType.BYTE)) return;
         if (meta.hasLore()) {
-            List<String> lore = new ArrayList<>();
-            for (String line : meta.getLore()) {
-                if (line.equals(color("&0FS_PREVIEW"))) break;
-                lore.add(line);
+            List<String> currentLore = new ArrayList<>(meta.getLore());
+            int marker = currentLore.indexOf(color("&0FS_PREVIEW"));
+            if (marker >= 0) {
+                // Clean up preview lore created by the previous plugin version.
+                currentLore = new ArrayList<>(currentLore.subList(0, marker));
+            } else if (!currentLore.isEmpty()) {
+                // New previews append exactly one payout line, so remove only that line.
+                currentLore.remove(currentLore.size() - 1);
             }
-            meta.setLore(lore.isEmpty() ? null : lore);
+            meta.setLore(currentLore.isEmpty() ? null : currentLore);
         }
         meta.getPersistentDataContainer().remove(previewKey);
         item.setItemMeta(meta);
@@ -313,7 +303,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     public void onWandUse(PlayerInteractEvent event) {
         if (event.getHand() == null || event.getHand().name().equals("OFF_HAND")) return;
         Action action = event.getAction();
-        if (action != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) return;
+        if ((action != Action.RIGHT_CLICK_BLOCK && action != Action.LEFT_CLICK_BLOCK) || event.getClickedBlock() == null) return;
         ItemStack held = event.getItem();
         if (!isWand(held)) return;
         if (!(event.getClickedBlock().getState() instanceof Chest chest)) return;
@@ -358,7 +348,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private ItemStack createWand(int uses) {
         ItemStack item = new ItemStack(Material.NETHERITE_AXE);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(color("&d&lSell Wand"));
+        meta.setDisplayName(color("&d&lˢᵉˡˡʷᵃⁿᵈ"));
         meta.setLore(wandLore(uses));
         meta.addEnchant(Enchantment.EFFICIENCY, 5, true);
         meta.addEnchant(Enchantment.UNBREAKING, 3, true);
@@ -370,7 +360,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private List<String> wandLore(int uses) {
-        return List.of(color("&7Instantly sell priced items inside a chest."), color("&7The chest is not broken."), color(""), color("&7Uses remaining: &d" + uses), color("&eRight-click a chest to sell"));
+        return List.of(color("&7Instantly sell priced items inside a chest."), color("&7The chest is not broken."), color(""), color("&7Uses remaining: &d" + uses), color("&eLeft- or right-click a chest to sell"));
     }
 
     private boolean isWand(ItemStack item) {
@@ -390,14 +380,18 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         catch (IllegalArgumentException ex) { return fallback; }
     }
 
-    private String money(double amount) {
+    private String formatAmount(double amount) {
         int decimals = Math.max(0, Math.min(4, getConfig().getInt("settings.money-decimals", 2)));
         StringBuilder pattern = new StringBuilder("#,##0");
         if (decimals > 0) pattern.append('.').append("0".repeat(decimals));
         DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance(Locale.US);
         DecimalFormat format = new DecimalFormat(pattern.toString(), symbols);
         format.setGroupingUsed(true);
-        return getConfig().getString("settings.currency-symbol", "$") + format.format(amount);
+        return format.format(amount);
+    }
+
+    private String money(double amount) {
+        return getConfig().getString("settings.currency-symbol", "$") + formatAmount(amount);
     }
 
     private String color(String text) { return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text); }
