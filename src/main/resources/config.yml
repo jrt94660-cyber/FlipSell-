@@ -5,11 +5,6 @@ settings:
   money-decimals: 2
   sell-button-name: '&a&lSELL ITEMS'
   sell-button-material: LIME_STAINED_GLASS_PANE
-  sell-button-lore:
-    - '&7Items ready: &f{items}'
-    - '&7Estimated payout: &a{total}'
-    - ''
-    - '&eClick to sell the priced items'
 messages:
   prefix: '&8[&dFlipSell&8] &r'
   no-economy: '&cNo Vault economy provider was found. Install Vault and an economy plugin.'
