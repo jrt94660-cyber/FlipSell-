@@ -22,7 +22,10 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -48,6 +51,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private NamespacedKey wandKey;
     private NamespacedKey usesKey;
     private NamespacedKey previewKey;
+    private NamespacedKey worthLoreKey;
+    private NamespacedKey worthLineKey;
     private final Map<UUID, SellMenuHolder> openMenus = new HashMap<>();
 
     @Override public void onEnable() {
@@ -56,12 +61,20 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         wandKey = new NamespacedKey(this, "sell_wand");
         usesKey = new NamespacedKey(this, "sell_uses");
         previewKey = new NamespacedKey(this, "preview_lore");
+        worthLoreKey = new NamespacedKey(this, "worth_lore");
+        worthLineKey = new NamespacedKey(this, "worth_lore_line");
         setupEconomy();
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("sell") != null) getCommand("sell").setExecutor(this);
         if (getCommand("sellwand") != null) { getCommand("sellwand").setExecutor(this); getCommand("sellwand").setTabCompleter(this); }
         if (getCommand("flipsell") != null) { getCommand("flipsell").setExecutor(this); getCommand("flipsell").setTabCompleter(this); }
-        getLogger().info("FlipSell enabled. Sell prices are configured in plugins/FlipSell/price.yml.");
+        // Apply worth lore to player inventories and ender chests. The periodic pass
+        // also refreshes stack totals after consuming, splitting, or otherwise changing amounts.
+        Bukkit.getScheduler().runTaskTimer(this, this::updateAllPlayerWorthLore, 20L, 20L);
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            Bukkit.getScheduler().runTask(this, () -> updatePlayerWorthLore(online));
+        }
+        getLogger().info("FlipSell enabled. Worth lore is maintained across player inventories.");
         if (economy == null) getLogger().warning("Vault economy provider not found; sales will be disabled until Vault and an economy plugin are installed.");
     }
 
@@ -141,6 +154,76 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         openMenus.put(player.getUniqueId(), holder);
         refreshPreview(inventory);
         player.openInventory(inventory);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onAnyInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        Inventory top = event.getView().getTopInventory();
+        // Remove only plugin-generated lore while Bukkit performs stack/merge operations.
+        stripWorthFromInventory(top);
+        stripWorthFromInventory(player.getInventory());
+        stripWorthLore(event.getCursor());
+        stripPreviewFromInventory(top);
+        stripPreviewFromInventory(player.getInventory());
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline()) return;
+            updatePlayerWorthLore(player);
+            if (player.getOpenInventory().getTopInventory().getHolder(false) instanceof SellMenuHolder holder) {
+                refreshPreview(holder.getInventory());
+            }
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onAnyInventoryDrag(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        Inventory top = event.getView().getTopInventory();
+        stripWorthFromInventory(top);
+        stripWorthFromInventory(player.getInventory());
+        stripWorthLore(event.getOldCursor());
+        stripWorthLore(event.getCursor());
+        stripPreviewFromInventory(top);
+        stripPreviewFromInventory(player.getInventory());
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline()) return;
+            updatePlayerWorthLore(player);
+            if (player.getOpenInventory().getTopInventory().getHolder(false) instanceof SellMenuHolder holder) {
+                refreshPreview(holder.getInventory());
+            }
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onItemPickup(EntityPickupItemEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        stripWorthFromInventory(player.getInventory());
+        ItemStack dropped = event.getItem().getItemStack();
+        stripWorthLore(dropped);
+        event.getItem().setItemStack(dropped);
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) updatePlayerWorthLore(player);
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onItemDrop(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        stripWorthFromInventory(player.getInventory());
+        ItemStack dropped = event.getItemDrop().getItemStack();
+        stripWorthLore(dropped);
+        event.getItemDrop().setItemStack(dropped);
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) updatePlayerWorthLore(player);
+        });
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) updatePlayerWorthLore(player);
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -280,22 +363,16 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             stripPreview(item);
-            double unit = priceManager.getPrice(item); // Price is based on material, not the item's custom display name.
+            double unit = priceManager.getPrice(item); // Custom display names do not affect material pricing.
             int amount = item.getAmount();
             double stackTotal = unit * amount;
             if (unit > 0) {
                 total += stackTotal;
                 itemCount += amount;
             }
-            // Every item in the sell menu gets a single worth line. Stack amounts are reflected in the total.
-            ItemMeta meta = item.getItemMeta();
-            if (meta != null) {
-                List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-                lore.add(color("&a" + getConfig().getString("settings.currency-symbol", "$") + "&f" + formatAmount(stackTotal)));
-                meta.setLore(lore);
-                meta.getPersistentDataContainer().set(previewKey, PersistentDataType.BYTE, (byte) 1);
-                item.setItemMeta(meta);
-            }
+            // The same worth-lore updater runs for menu items and normal player inventories.
+            updateWorthLore(item);
+            inventory.setItem(slot, item);
         }
         Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "LIME_STAINED_GLASS_PANE"), Material.LIME_STAINED_GLASS_PANE);
         String name = color(getConfig().getString("settings.sell-button-name", "&a&lSELL ITEMS"));
@@ -330,6 +407,85 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             remaining -= transfer;
         }
         return initial - remaining;
+    }
+
+    private void updateAllPlayerWorthLore() {
+        for (Player player : Bukkit.getOnlinePlayers()) updatePlayerWorthLore(player);
+    }
+
+    private void updatePlayerWorthLore(Player player) {
+        updateInventoryWorthLore(player.getInventory());
+        updateInventoryWorthLore(player.getEnderChest());
+        ItemStack cursor = player.getItemOnCursor();
+        if (updateWorthLore(cursor)) player.setItemOnCursor(cursor);
+    }
+
+    private void updateInventoryWorthLore(Inventory inventory) {
+        if (inventory == null) return;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            if (updateWorthLore(item)) inventory.setItem(slot, item);
+        }
+    }
+
+    private boolean updateWorthLore(ItemStack item) {
+        if (item == null || item.getType().isAir()) return false;
+        // Remove stale preview metadata from earlier plugin builds before adding the permanent worth line.
+        stripPreview(item);
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return false;
+
+        List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+        String previousLine = meta.getPersistentDataContainer().get(worthLineKey, PersistentDataType.STRING);
+        double totalWorth = priceManager.getPrice(item) * item.getAmount();
+        String newLine = color("&a$ &f" + formatAmount(totalWorth));
+
+        if (previousLine != null && previousLine.equals(newLine)
+                && !lore.isEmpty() && lore.get(lore.size() - 1).equals(newLine)
+                && meta.getPersistentDataContainer().has(worthLoreKey, PersistentDataType.BYTE)) {
+            return false;
+        }
+
+        if (previousLine != null) {
+            int oldIndex = lore.lastIndexOf(previousLine);
+            if (oldIndex >= 0) lore.remove(oldIndex);
+        }
+        lore.add(newLine);
+        meta.setLore(lore);
+        meta.getPersistentDataContainer().set(worthLoreKey, PersistentDataType.BYTE, (byte) 1);
+        meta.getPersistentDataContainer().set(worthLineKey, PersistentDataType.STRING, newLine);
+        item.setItemMeta(meta);
+        return true;
+    }
+
+    private void stripWorthFromInventory(Inventory inventory) {
+        if (inventory == null) return;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            if (stripWorthLore(item)) inventory.setItem(slot, item);
+        }
+    }
+
+    private boolean stripWorthLore(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return false;
+        String previousLine = meta.getPersistentDataContainer().get(worthLineKey, PersistentDataType.STRING);
+        boolean hadMarker = meta.getPersistentDataContainer().has(worthLoreKey, PersistentDataType.BYTE);
+        if (previousLine == null && !hadMarker) return false;
+
+        List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+        if (previousLine != null) {
+            int oldIndex = lore.lastIndexOf(previousLine);
+            if (oldIndex >= 0) lore.remove(oldIndex);
+        }
+        meta.setLore(lore.isEmpty() ? null : lore);
+        meta.getPersistentDataContainer().remove(worthLoreKey);
+        meta.getPersistentDataContainer().remove(worthLineKey);
+        item.setItemMeta(meta);
+        return true;
     }
 
     private void stripPreviewFromInventory(Inventory inventory) {
