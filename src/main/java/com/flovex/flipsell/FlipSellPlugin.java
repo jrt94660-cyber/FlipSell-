@@ -53,6 +53,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private NamespacedKey previewKey;
     private NamespacedKey worthLoreKey;
     private NamespacedKey worthLineKey;
+    private NamespacedKey worthIndexKey;
     private final Map<UUID, SellMenuHolder> openMenus = new HashMap<>();
 
     @Override public void onEnable() {
@@ -63,6 +64,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         previewKey = new NamespacedKey(this, "preview_lore");
         worthLoreKey = new NamespacedKey(this, "worth_lore");
         worthLineKey = new NamespacedKey(this, "worth_lore_line");
+        worthIndexKey = new NamespacedKey(this, "worth_lore_index");
         setupEconomy();
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("sell") != null) getCommand("sell").setExecutor(this);
@@ -160,12 +162,37 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     public void onAnyInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Inventory top = event.getView().getTopInventory();
-        // Remove only plugin-generated lore while Bukkit performs stack/merge operations.
-        stripWorthFromInventory(top);
-        stripWorthFromInventory(player.getInventory());
-        stripWorthLore(event.getCursor());
-        stripPreviewFromInventory(top);
-        stripPreviewFromInventory(player.getInventory());
+        ItemStack current = event.getCurrentItem();
+
+        // Never rewrite the entire PlayerInventory during a click. In particular, do not
+        // call setItem() on armor slots while vanilla is moving armor; this can desync clicks.
+        if (event.isShiftClick()) {
+            stripWorthFromMatchingPlayerStorage(player, current);
+            if (top.getHolder(false) instanceof SellMenuHolder || top == player.getEnderChest()) {
+                stripWorthFromMatchingInventory(top, current);
+                stripPreviewFromInventory(top);
+            }
+        } else {
+            boolean clickedEquippedSlot = event.getClickedInventory() == player.getInventory()
+                    && event.getSlot() >= 36;
+            if (!clickedEquippedSlot) stripWorthLore(current);
+            stripWorthLore(event.getCursor());
+
+            if (event.getClick() == ClickType.NUMBER_KEY && event.getHotbarButton() >= 0) {
+                stripWorthLore(player.getInventory().getItem(event.getHotbarButton()));
+            }
+            if (event.getClick() == ClickType.SWAP_OFFHAND) {
+                stripWorthLore(player.getInventory().getItemInOffHand());
+            }
+            if (top.getHolder(false) instanceof SellMenuHolder) {
+                stripWorthLore(current);
+                stripWorthFromMatchingInventory(top, current);
+                stripPreviewFromInventory(top);
+            } else if (top == player.getEnderChest()) {
+                stripWorthFromMatchingInventory(top, current);
+            }
+        }
+
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
             updatePlayerWorthLore(player);
@@ -179,12 +206,22 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     public void onAnyInventoryDrag(InventoryDragEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Inventory top = event.getView().getTopInventory();
-        stripWorthFromInventory(top);
-        stripWorthFromInventory(player.getInventory());
-        stripWorthLore(event.getOldCursor());
-        stripWorthLore(event.getCursor());
-        stripPreviewFromInventory(top);
-        stripPreviewFromInventory(player.getInventory());
+        ItemStack cursor = event.getOldCursor();
+        stripWorthLore(cursor);
+        stripWorthFromMatchingPlayerStorage(player, cursor);
+
+        if (top.getHolder(false) instanceof SellMenuHolder || top == player.getEnderChest()) {
+            for (int raw : event.getRawSlots()) {
+                if (raw < top.getSize()) {
+                    stripWorthLore(top.getItem(raw));
+                } else {
+                    int playerSlot = event.getView().convertSlot(raw);
+                    if (playerSlot >= 0 && playerSlot < 36) stripWorthLore(player.getInventory().getItem(playerSlot));
+                }
+            }
+            if (top.getHolder(false) instanceof SellMenuHolder) stripPreviewFromInventory(top);
+        }
+
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
             updatePlayerWorthLore(player);
@@ -197,8 +234,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemPickup(EntityPickupItemEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
-        stripWorthFromInventory(player.getInventory());
         ItemStack dropped = event.getItem().getItemStack();
+        stripWorthFromMatchingPlayerStorage(player, dropped);
         stripWorthLore(dropped);
         event.getItem().setItemStack(dropped);
         Bukkit.getScheduler().runTask(this, () -> {
@@ -209,8 +246,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
-        stripWorthFromInventory(player.getInventory());
         ItemStack dropped = event.getItemDrop().getItemStack();
+        stripWorthFromMatchingPlayerStorage(player, dropped);
         stripWorthLore(dropped);
         event.getItemDrop().setItemStack(dropped);
         Bukkit.getScheduler().runTask(this, () -> {
@@ -414,8 +451,30 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private void updatePlayerWorthLore(Player player) {
-        updateInventoryWorthLore(player.getInventory());
+        // PlayerInventory mixes storage, armor and offhand slots. Update them via their
+        // dedicated APIs instead of looping setItem(0..size), which can duplicate armor
+        // during inventory interactions on some server versions.
+        org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
+
+        ItemStack[] storage = inventory.getStorageContents();
+        boolean storageChanged = false;
+        for (ItemStack item : storage) {
+            if (item != null && updateWorthLore(item)) storageChanged = true;
+        }
+        if (storageChanged) inventory.setStorageContents(storage);
+
+        ItemStack[] armor = inventory.getArmorContents();
+        boolean armorChanged = false;
+        for (ItemStack item : armor) {
+            if (item != null && updateWorthLore(item)) armorChanged = true;
+        }
+        if (armorChanged) inventory.setArmorContents(armor);
+
+        ItemStack offhand = inventory.getItemInOffHand();
+        if (offhand != null && updateWorthLore(offhand)) inventory.setItemInOffHand(offhand);
+
         updateInventoryWorthLore(player.getEnderChest());
+
         ItemStack cursor = player.getItemOnCursor();
         if (updateWorthLore(cursor)) player.setItemOnCursor(cursor);
     }
@@ -429,42 +488,117 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
     }
 
+    private void updateWorthLoreInPlace(ItemStack item) {
+        updateWorthLore(item);
+    }
+
     private boolean updateWorthLore(ItemStack item) {
         if (item == null || item.getType().isAir()) return false;
-        // Remove stale preview metadata from earlier plugin builds before adding the permanent worth line.
         stripPreview(item);
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return false;
 
         List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-        String previousLine = meta.getPersistentDataContainer().get(worthLineKey, PersistentDataType.STRING);
+        var pdc = meta.getPersistentDataContainer();
+        String previousLine = pdc.get(worthLineKey, PersistentDataType.STRING);
+        Integer savedIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
         double totalWorth = priceManager.getPrice(item) * item.getAmount();
         String newLine = color("&a$ &f" + formatAmount(totalWorth));
+        boolean hasMarker = pdc.has(worthLoreKey, PersistentDataType.BYTE);
 
-        if (previousLine != null && previousLine.equals(newLine)
-                && !lore.isEmpty() && lore.get(lore.size() - 1).equals(newLine)
-                && meta.getPersistentDataContainer().has(worthLoreKey, PersistentDataType.BYTE)) {
-            return false;
+        if (previousLine != null && hasMarker) {
+            int previousIndex = savedIndex != null ? savedIndex : lore.lastIndexOf(previousLine);
+            if (previousIndex >= 0 && previousIndex < lore.size() && lore.get(previousIndex).equals(previousLine)) {
+                if (previousLine.equals(newLine)) return false;
+                lore.set(previousIndex, newLine);
+                meta.setLore(lore);
+                pdc.set(worthLineKey, PersistentDataType.STRING, newLine);
+                if (savedIndex == null) pdc.set(worthIndexKey, PersistentDataType.INTEGER, previousIndex);
+                item.setItemMeta(meta);
+                return true;
+            }
+            int fallbackIndex = lore.lastIndexOf(previousLine);
+            if (fallbackIndex >= 0) lore.set(fallbackIndex, "");
         }
 
-        if (previousLine != null) {
-            int oldIndex = lore.lastIndexOf(previousLine);
-            if (oldIndex >= 0) lore.remove(oldIndex);
+        // Migrate old appended worth lines to the category line's position, where possible.
+        int categoryIndex = findCategoryLoreIndex(lore);
+        if (categoryIndex >= 0) {
+            lore.set(categoryIndex, newLine);
+            pdc.set(worthIndexKey, PersistentDataType.INTEGER, categoryIndex);
+        } else if (savedIndex != null && savedIndex >= 0 && savedIndex < lore.size()
+                && lore.get(savedIndex).isEmpty()) {
+            lore.set(savedIndex, newLine);
+        } else {
+            lore.add(newLine);
+            pdc.set(worthIndexKey, PersistentDataType.INTEGER, lore.size() - 1);
         }
-        lore.add(newLine);
+
         meta.setLore(lore);
-        meta.getPersistentDataContainer().set(worthLoreKey, PersistentDataType.BYTE, (byte) 1);
-        meta.getPersistentDataContainer().set(worthLineKey, PersistentDataType.STRING, newLine);
+        pdc.set(worthLoreKey, PersistentDataType.BYTE, (byte) 1);
+        pdc.set(worthLineKey, PersistentDataType.STRING, newLine);
         item.setItemMeta(meta);
         return true;
+    }
+
+    private int findCategoryLoreIndex(List<String> lore) {
+        for (int i = 0; i < lore.size(); i++) {
+            String line = ChatColor.stripColor(lore.get(i));
+            if (line == null) continue;
+            String normalized = line.trim().toLowerCase(Locale.ROOT)
+                    .replace('_', ' ').replace('-', ' ').replaceAll("\\s+", " ");
+            normalized = normalized.replaceFirst("^category\\s*:\\s*", "").trim();
+            if (java.util.Set.of(
+                    "building blocks", "colored blocks", "natural blocks", "functional blocks",
+                    "redstone blocks", "redstone", "transportation", "miscellaneous",
+                    "foodstuffs", "food and drink", "food & drink", "ingredients",
+                    "tools", "tools and utilities", "tools & utilities", "combat",
+                    "decorations", "decorative blocks", "spawn eggs", "nature",
+                    "building", "blocks", "equipment"
+            ).contains(normalized)) return i;
+        }
+        return -1;
+    }
+
+    // Only touch the player's 36 storage slots here. Do not use a generic loop over
+    // PlayerInventory.getSize(), because that also exposes armor/offhand implementation slots.
+    private void stripWorthFromMatchingPlayerStorage(Player player, ItemStack match) {
+        org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            if (match == null || match.getType().isAir() || wouldStackIgnoringWorth(item, match)) {
+                stripWorthLore(item);
+            }
+        }
+    }
+
+    private void stripWorthFromMatchingInventory(Inventory inventory, ItemStack match) {
+        if (inventory == null) return;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            if (match == null || match.getType().isAir() || wouldStackIgnoringWorth(item, match)) {
+                stripWorthLore(item);
+            }
+        }
+    }
+
+    private boolean wouldStackIgnoringWorth(ItemStack first, ItemStack second) {
+        if (first == null || second == null || first.getType() != second.getType()) return false;
+        ItemStack a = first.clone();
+        ItemStack b = second.clone();
+        stripWorthLore(a);
+        stripWorthLore(b);
+        stripPreview(a);
+        stripPreview(b);
+        return a.isSimilar(b);
     }
 
     private void stripWorthFromInventory(Inventory inventory) {
         if (inventory == null) return;
         for (int slot = 0; slot < inventory.getSize(); slot++) {
-            ItemStack item = inventory.getItem(slot);
-            if (item == null || item.getType().isAir()) continue;
-            if (stripWorthLore(item)) inventory.setItem(slot, item);
+            stripWorthLore(inventory.getItem(slot));
         }
     }
 
@@ -472,18 +606,28 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (item == null || !item.hasItemMeta()) return false;
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return false;
-        String previousLine = meta.getPersistentDataContainer().get(worthLineKey, PersistentDataType.STRING);
-        boolean hadMarker = meta.getPersistentDataContainer().has(worthLoreKey, PersistentDataType.BYTE);
+        var pdc = meta.getPersistentDataContainer();
+        String previousLine = pdc.get(worthLineKey, PersistentDataType.STRING);
+        Integer savedIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+        boolean hadMarker = pdc.has(worthLoreKey, PersistentDataType.BYTE);
         if (previousLine == null && !hadMarker) return false;
 
         List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
         if (previousLine != null) {
-            int oldIndex = lore.lastIndexOf(previousLine);
-            if (oldIndex >= 0) lore.remove(oldIndex);
+            int index = savedIndex != null ? savedIndex : lore.lastIndexOf(previousLine);
+            if (index >= 0 && index < lore.size() && lore.get(index).equals(previousLine)) {
+                // Keep a blank placeholder instead of restoring the category text. This makes
+                // the worth line permanently replace the category lore, without it toggling back.
+                lore.set(index, "");
+                pdc.set(worthIndexKey, PersistentDataType.INTEGER, index);
+            } else {
+                int fallback = lore.lastIndexOf(previousLine);
+                if (fallback >= 0) lore.set(fallback, "");
+            }
         }
         meta.setLore(lore.isEmpty() ? null : lore);
-        meta.getPersistentDataContainer().remove(worthLoreKey);
-        meta.getPersistentDataContainer().remove(worthLineKey);
+        pdc.remove(worthLoreKey);
+        pdc.remove(worthLineKey);
         item.setItemMeta(meta);
         return true;
     }
