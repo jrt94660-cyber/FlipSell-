@@ -1,7 +1,7 @@
 name: FlipSell
 version: 1.0.3
 main: com.flovex.flipsell.FlipSellPlugin
-api-version: '26.3'
+api-version: '1.21.11'
 authors: [FlovexSMP]
 description: Six-row sell GUI with editable prices and limited-use chest sell wands.
 softdepend: [Vault]
