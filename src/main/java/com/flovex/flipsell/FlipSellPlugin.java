@@ -506,22 +506,31 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         String newLine = color("&a$ &f" + formatAmount(totalWorth));
         boolean hasMarker = pdc.has(worthLoreKey, PersistentDataType.BYTE);
 
-        if (previousLine != null && hasMarker) {
-            int previousIndex = savedIndex != null ? savedIndex : lore.lastIndexOf(previousLine);
-            if (previousIndex >= 0 && previousIndex < lore.size() && lore.get(previousIndex).equals(previousLine)) {
-                if (previousLine.equals(newLine)) return false;
-                lore.set(previousIndex, newLine);
-                meta.setLore(lore);
-                pdc.set(worthLineKey, PersistentDataType.STRING, newLine);
-                if (savedIndex == null) pdc.set(worthIndexKey, PersistentDataType.INTEGER, previousIndex);
-                item.setItemMeta(meta);
-                return true;
-            }
-            int fallbackIndex = lore.lastIndexOf(previousLine);
-            if (fallbackIndex >= 0) lore.set(fallbackIndex, "");
+        int previousIndex = previousLine == null ? -1
+                : (savedIndex != null ? savedIndex : lore.lastIndexOf(previousLine));
+        int categoryIndexBeforeMigration = findCategoryLoreIndex(lore);
+        boolean legacyAppendedLine = previousLine != null && savedIndex == null
+                && categoryIndexBeforeMigration >= 0 && categoryIndexBeforeMigration != previousIndex;
+
+        if (previousLine != null && hasMarker && previousIndex >= 0 && previousIndex < lore.size()
+                && lore.get(previousIndex).equals(previousLine) && !legacyAppendedLine) {
+            if (previousLine.equals(newLine)) return false;
+            lore.set(previousIndex, newLine);
+            meta.setLore(lore);
+            pdc.set(worthLineKey, PersistentDataType.STRING, newLine);
+            pdc.set(worthIndexKey, PersistentDataType.INTEGER, previousIndex);
+            item.setItemMeta(meta);
+            return true;
         }
 
         // Migrate old appended worth lines to the category line's position, where possible.
+        if (legacyAppendedLine && previousIndex >= 0 && previousIndex < lore.size()) {
+            lore.remove(previousIndex);
+        } else if (previousLine != null && previousIndex >= 0 && previousIndex < lore.size()
+                && lore.get(previousIndex).equals(previousLine)) {
+            // Keep a blank placeholder at this saved position while the stack is being moved.
+            lore.set(previousIndex, "");
+        }
         int categoryIndex = findCategoryLoreIndex(lore);
         if (categoryIndex >= 0) {
             lore.set(categoryIndex, newLine);
@@ -567,7 +576,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         for (int slot = 0; slot < 36; slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
-            if (match == null || match.getType().isAir() || wouldStackIgnoringWorth(item, match)) {
+            if (match != null && !match.getType().isAir() && wouldStackIgnoringWorth(item, match)) {
                 stripWorthLore(item);
             }
         }
@@ -578,7 +587,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
-            if (match == null || match.getType().isAir() || wouldStackIgnoringWorth(item, match)) {
+            if (match != null && !match.getType().isAir() && wouldStackIgnoringWorth(item, match)) {
                 stripWorthLore(item);
             }
         }
@@ -615,14 +624,14 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
         if (previousLine != null) {
             int index = savedIndex != null ? savedIndex : lore.lastIndexOf(previousLine);
-            if (index >= 0 && index < lore.size() && lore.get(index).equals(previousLine)) {
-                // Keep a blank placeholder instead of restoring the category text. This makes
-                // the worth line permanently replace the category lore, without it toggling back.
+            if (savedIndex != null && index >= 0 && index < lore.size() && lore.get(index).equals(previousLine)) {
+                // Keep a blank at the replaced category/worth position so the category never reappears.
                 lore.set(index, "");
                 pdc.set(worthIndexKey, PersistentDataType.INTEGER, index);
             } else {
+                // Legacy versions appended the worth line at the end. Remove that old line cleanly.
                 int fallback = lore.lastIndexOf(previousLine);
-                if (fallback >= 0) lore.set(fallback, "");
+                if (fallback >= 0) lore.remove(fallback);
             }
         }
         meta.setLore(lore.isEmpty() ? null : lore);
