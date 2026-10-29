@@ -1,0 +1,28 @@
+# FlipSell settings
+settings:
+  gui-title: '&8Sell Items'
+  currency-symbol: '$'
+  money-decimals: 2
+  sell-button-name: '&a&lSELL ITEMS'
+  sell-button-material: EMERALD_BLOCK
+  sell-button-lore:
+    - '&7Items ready: &f{items}'
+    - '&7Estimated payout: &a{total}'
+    - ''
+    - '&eClick to sell the priced items'
+  filler-material: BLACK_STAINED_GLASS_PANE
+messages:
+  prefix: '&8[&dFlipSell&8] &r'
+  no-economy: '&cNo Vault economy provider was found. Install Vault and an economy plugin.'
+  nothing-to-sell: '&cThere are no priced items to sell.'
+  sold: '&aSold &f{items} &aitems for &2{total}&a.'
+  no-permission: '&cYou do not have permission to do that.'
+  wand-given: '&aGave &f{player} &aa Sell Wand with &f{uses} &auses.'
+  wand-received: '&aYou received a Sell Wand with &f{uses} &auses.'
+  wand-usage: '&cUsage: /sellwand give <player> <uses>'
+  wand-invalid-uses: '&cUses must be a whole number greater than zero.'
+  wand-not-chest: '&cPoint the Sell Wand at a chest.'
+  wand-empty: '&cThat chest has no items with a sell price.'
+  wand-sold: '&aSold &f{items} &aitems from the chest for &2{total}&a. &7Uses left: &f{uses}'
+  wand-exhausted: '&eYour Sell Wand has run out of uses.'
+  reloaded: '&aConfiguration and prices reloaded.'
