@@ -1,5 +1,5 @@
 name: FlipSell
-version: 1.0.5
+version: 1.0.6
 main: com.flovex.flipsell.FlipSellPlugin
 api-version: '1.21.11'
 authors: [FlovexSMP]
