@@ -1,14 +1,14 @@
 # FlipSell
 
-A Paper 26.3 plugin for a six-row sell menu and a limited-use chest Sell Wand inspired by DonutSMP's selling tools.
+A Paper 26.3 plugin for a six-row sell menu and limited-use chest Sell Wand.
 
 ## Features
 
-- `/sell` opens a 54-slot GUI. Player items go in the first 45 slots; the entire bottom row is reserved and the sell button is always slot 53 (the final slot).
-- Per-stack tooltip previews show each item's configured unit sell price and stack total. The button shows the estimated total and item count.
-- Clicking **SELL ITEMS** sells only items whose configured price is greater than zero. Any unpriced items stay in the GUI; closing the menu returns remaining items to the player (dropping leftovers if their inventory is full).
-- `plugins/FlipSell/price.yml` is generated with a price entry for every item Material exposed by the running Paper server, including legacy-era materials still represented by the current API. New entries are added after updates without overwriting prices you changed.
-- `/sellwand give <player> <uses>` gives a netherite-axe-styled Sell Wand. Right-click a chest to sell all priced contents in one use. The chest stays in place, unpriced items stay in the chest, and double chests are supported.
+- `/sell` opens a 54-slot GUI. Player items go in the first 45 slots; there are no filler panes, and the lime stained-glass sell button is always in slot 53 (bottom-right).
+- Sellable items show one added tooltip line only: a green currency symbol followed by the white stack payout (for example, `$12.00`). No explanatory tooltip text is added. Unpriced items get no sell-price tooltip and are not sold.
+- Clicking **SELL ITEMS** sells only items whose configured price is greater than zero. Any unpriced items stay in the GUI; closing the menu returns remaining items to the player (dropping leftovers if inventory is full).
+- `plugins/FlipSell/price.yml` is generated with a price entry for every item Material exposed by the running Paper API, including old/legacy materials represented by the current API. New entries are added after updates without overwriting prices you changed.
+- `/sellwand give <player> <uses>` gives a Sell Wand named with small Unicode text. Left- or right-click a chest to sell all priced contents in one use. The chest stays in place, unpriced items stay in the chest, and double chests are supported.
 - Vault economy integration and `/flipsell reload`.
 - GitHub Actions Maven build on pushes/PRs to `main`.
 
