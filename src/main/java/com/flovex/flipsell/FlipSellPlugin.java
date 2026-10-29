@@ -154,7 +154,38 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
         if (raw >= INPUT_SLOTS && raw < GUI_SIZE) { event.setCancelled(true); return; }
         if (raw < 0) { event.setCancelled(true); return; }
-        if (event.isShiftClick() || event.getClick() == ClickType.DOUBLE_CLICK || event.getClick() == ClickType.NUMBER_KEY) {
+        if (event.isShiftClick()) {
+            // Shift-click from the player's inventory is a supported way to add items to the sell menu.
+            event.setCancelled(true);
+            if (event.getWhoClicked() instanceof Player player) {
+                ItemStack current = event.getCurrentItem();
+                if (current != null && !current.getType().isAir()) {
+                    if (raw >= GUI_SIZE) {
+                        int moved = moveIntoSellInput(holder.getInventory(), current.clone());
+                        if (moved >= current.getAmount()) {
+                            event.setCurrentItem(null);
+                        } else if (moved > 0) {
+                            current.setAmount(current.getAmount() - moved);
+                            event.setCurrentItem(current);
+                        }
+                    } else if (raw >= 0 && raw < INPUT_SLOTS) {
+                        ItemStack moving = current.clone();
+                        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(moving);
+                        int left = leftovers.values().stream().mapToInt(ItemStack::getAmount).sum();
+                        int moved = current.getAmount() - left;
+                        if (moved >= current.getAmount()) {
+                            event.setCurrentItem(null);
+                        } else if (moved > 0) {
+                            current.setAmount(current.getAmount() - moved);
+                            event.setCurrentItem(current);
+                        }
+                    }
+                }
+                Bukkit.getScheduler().runTask(this, () -> refreshPreview(holder.getInventory()));
+            }
+            return;
+        }
+        if (event.getClick() == ClickType.DOUBLE_CLICK || event.getClick() == ClickType.NUMBER_KEY) {
             event.setCancelled(true);
             return;
         }
@@ -241,21 +272,21 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             stripPreview(item);
-            double unit = priceManager.getPrice(item);
+            double unit = priceManager.getPrice(item); // Price is based on material, not the item's custom display name.
             int amount = item.getAmount();
+            double stackTotal = unit * amount;
             if (unit > 0) {
-                double stackTotal = unit * amount;
                 total += stackTotal;
                 itemCount += amount;
-                ItemMeta meta = item.getItemMeta();
-                if (meta != null) {
-                    List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-                    // Single tooltip line only: green currency symbol, white stack payout.
-                    lore.add(color("&a" + getConfig().getString("settings.currency-symbol", "$") + "&f" + formatAmount(stackTotal)));
-                    meta.setLore(lore);
-                    meta.getPersistentDataContainer().set(previewKey, PersistentDataType.BYTE, (byte) 1);
-                    item.setItemMeta(meta);
-                }
+            }
+            // Every item in the sell menu gets a single worth line. Stack amounts are reflected in the total.
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+                List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+                lore.add(color("&a" + getConfig().getString("settings.currency-symbol", "$") + "&f" + formatAmount(stackTotal)));
+                meta.setLore(lore);
+                meta.getPersistentDataContainer().set(previewKey, PersistentDataType.BYTE, (byte) 1);
+                item.setItemMeta(meta);
             }
         }
         Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "LIME_STAINED_GLASS_PANE"), Material.LIME_STAINED_GLASS_PANE);
@@ -266,6 +297,33 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                 .map(s -> color(s.replace("{items}", Integer.toString(displayedItems)).replace("{total}", money(displayedTotal)))).toList();
         if (lore.isEmpty()) lore = List.of(color("&7Items: &f" + itemCount), color("&7Total: &a" + money(total)), color("&eClick to sell"));
         inventory.setItem(SELL_SLOT, namedItem(buttonMaterial, name, lore));
+    }
+
+    private int moveIntoSellInput(Inventory gui, ItemStack moving) {
+        int initial = moving.getAmount();
+        int remaining = initial;
+        // Merge into matching stacks first.
+        for (int slot = 0; slot < INPUT_SLOTS && remaining > 0; slot++) {
+            ItemStack existing = gui.getItem(slot);
+            if (existing == null || existing.getType().isAir() || !existing.isSimilar(moving)) continue;
+            int room = Math.max(0, existing.getMaxStackSize() - existing.getAmount());
+            if (room == 0) continue;
+            int transfer = Math.min(room, remaining);
+            existing.setAmount(existing.getAmount() + transfer);
+            remaining -= transfer;
+        }
+        // Then use empty sell slots.
+        for (int slot = 0; slot < INPUT_SLOTS && remaining > 0; slot++) {
+            ItemStack existing = gui.getItem(slot);
+            if (existing != null && !existing.getType().isAir()) continue;
+            int transfer = Math.min(moving.getMaxStackSize(), remaining);
+            ItemStack placed = moving.clone();
+            placed.setAmount(transfer);
+            stripPreview(placed);
+            gui.setItem(slot, placed);
+            remaining -= transfer;
+        }
+        return initial - remaining;
     }
 
     private void stripPreviewFromInventory(Inventory inventory) {
