@@ -1,5 +1,10 @@
 # FlipSell
 
+## Version 1.0.9
+
+- Added compact money suffixes: `k`, `m`, `b`, `t`, `q`, and `qq` (powers of 1,000).
+- Worth lore, sell totals, and Sell Wand payout messages use compact money formatting with two decimal places.
+
 ## Version 1.0.8
 
 - Fixed disappearing/duplicating items during inventory and container slot moves by removing the repeating full-inventory refresh and updating individual slots only.
