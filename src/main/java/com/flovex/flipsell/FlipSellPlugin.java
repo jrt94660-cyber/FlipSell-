@@ -772,7 +772,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             value /= 1000.0;
             suffix++;
         }
-        DecimalFormat compact = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US));
+        int decimals = Math.max(0, Math.min(4, getConfig().getInt("settings.money-decimals", 2)));\n        String pattern = decimals == 0 ? "0" : "0." + "0".repeat(decimals);\n        DecimalFormat compact = new DecimalFormat(pattern, DecimalFormatSymbols.getInstance(Locale.US));
         return compact.format(value) + suffixes[suffix];
     }
 
