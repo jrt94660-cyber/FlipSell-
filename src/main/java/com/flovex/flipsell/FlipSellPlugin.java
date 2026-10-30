@@ -73,7 +73,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (getCommand("flipsell") != null) { getCommand("flipsell").setExecutor(this); getCommand("flipsell").setTabCompleter(this); }
         // Apply worth lore to player inventories and ender chests. The periodic pass
         // also refreshes stack totals after consuming, splitting, or otherwise changing amounts.
-        Bukkit.getScheduler().runTaskTimer(this, this::updateAllPlayerWorthLore, 20L, 20L);
+        // Do not run a repeating inventory rewrite: it can race vanilla slot moves and cause ghost/disappearing items.
         for (Player online : Bukkit.getOnlinePlayers()) {
             Bukkit.getScheduler().runTask(this, () -> updatePlayerWorthLore(online));
         }
@@ -186,6 +186,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
             updatePlayerWorthLore(player);
+            updateInventoryWorthLore(player.getOpenInventory().getTopInventory());
             if (player.getOpenInventory().getTopInventory().getHolder(false) instanceof SellMenuHolder holder) {
                 refreshPreview(holder.getInventory());
             }
@@ -499,7 +500,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         String previousLine = pdc.get(worthLineKey, PersistentDataType.STRING);
         Integer savedIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
         double totalWorth = priceManager.getPrice(item) * item.getAmount();
-        String newLine = color("&a$ &f" + formatAmount(totalWorth));
+        String symbol = getConfig().getString("settings.currency-symbol", "$");
+        String newLine = color("&a" + symbol + " &f" + formatAmount(totalWorth));
         boolean hasMarker = pdc.has(worthLoreKey, PersistentDataType.BYTE);
 
         int previousIndex = previousLine == null ? -1
