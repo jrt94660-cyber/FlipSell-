@@ -23,6 +23,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.ItemMergeEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -166,31 +167,20 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
         // Never rewrite the entire PlayerInventory during a click. In particular, do not
         // call setItem() on armor slots while vanilla is moving armor; this can desync clicks.
-        if (event.isShiftClick()) {
-            stripWorthFromMatchingPlayerStorage(player, current);
-            if (top.getHolder(false) instanceof SellMenuHolder || top == player.getEnderChest()) {
-                stripWorthFromMatchingInventory(top, current);
-                stripPreviewFromInventory(top);
-            }
-        } else {
-            boolean clickedEquippedSlot = event.getClickedInventory() == player.getInventory()
-                    && event.getSlot() >= 36;
-            if (!clickedEquippedSlot) stripWorthLore(current);
-            stripWorthLore(event.getCursor());
-
-            if (event.getClick() == ClickType.NUMBER_KEY && event.getHotbarButton() >= 0) {
-                stripWorthLore(player.getInventory().getItem(event.getHotbarButton()));
-            }
-            if (event.getClick() == ClickType.SWAP_OFFHAND) {
-                stripWorthLore(player.getInventory().getItemInOffHand());
-            }
-            if (top.getHolder(false) instanceof SellMenuHolder) {
-                stripWorthLore(current);
-                stripWorthFromMatchingInventory(top, current);
-                stripPreviewFromInventory(top);
-            } else if (top == player.getEnderChest()) {
-                stripWorthFromMatchingInventory(top, current);
-            }
+        // Vanilla compares item metadata when stacking. Remove our generated worth
+        // metadata from all ordinary storage candidates before Bukkit processes any click
+        // (including shift-click, number-key swap, double-click collect and cursor merges).
+        // Armor/offhand are deliberately excluded here to avoid mutating equipped slots.
+        stripWorthFromPlayerStorage(player);
+        stripWorthLore(event.getCursor());
+        if (event.getClickedInventory() != null && event.getClickedInventory() != player.getInventory()) {
+            stripWorthFromInventory(event.getClickedInventory());
+        }
+        if (top.getHolder(false) instanceof SellMenuHolder) {
+            stripPreviewFromInventory(top);
+        }
+        if (event.getClick() == ClickType.NUMBER_KEY && event.getHotbarButton() >= 0) {
+            stripWorthLore(player.getInventory().getItem(event.getHotbarButton()));
         }
 
         Bukkit.getScheduler().runTask(this, () -> {
@@ -208,18 +198,14 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Inventory top = event.getView().getTopInventory();
         ItemStack cursor = event.getOldCursor();
         stripWorthLore(cursor);
-        stripWorthFromMatchingPlayerStorage(player, cursor);
-
-        if (top.getHolder(false) instanceof SellMenuHolder || top == player.getEnderChest()) {
-            for (int raw : event.getRawSlots()) {
-                if (raw < top.getSize()) {
-                    stripWorthLore(top.getItem(raw));
-                } else {
-                    int playerSlot = event.getView().convertSlot(raw);
-                    if (playerSlot >= 0 && playerSlot < 36) stripWorthLore(player.getInventory().getItem(playerSlot));
-                }
+        stripWorthFromPlayerStorage(player);
+        stripWorthFromInventory(top);
+        if (top.getHolder(false) instanceof SellMenuHolder) stripPreviewFromInventory(top);
+        for (int raw : event.getRawSlots()) {
+            if (raw >= top.getSize()) {
+                int playerSlot = event.getView().convertSlot(raw);
+                if (playerSlot >= 0 && playerSlot < 36) stripWorthLore(player.getInventory().getItem(playerSlot));
             }
-            if (top.getHolder(false) instanceof SellMenuHolder) stripPreviewFromInventory(top);
         }
 
         Bukkit.getScheduler().runTask(this, () -> {
@@ -229,6 +215,16 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                 refreshPreview(holder.getInventory());
             }
         });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onItemMerge(ItemMergeEvent event) {
+        ItemStack source = event.getEntity().getItemStack();
+        ItemStack target = event.getTarget().getItemStack();
+        stripWorthLore(source);
+        stripWorthLore(target);
+        event.getEntity().setItemStack(source);
+        event.getTarget().setItemStack(target);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
@@ -567,6 +563,13 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             ).contains(normalized)) return i;
         }
         return -1;
+    }
+
+    private void stripWorthFromPlayerStorage(Player player) {
+        org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
+        for (int slot = 0; slot < 36; slot++) {
+            stripWorthLore(inventory.getItem(slot));
+        }
     }
 
     // Only touch the player's 36 storage slots here. Do not use a generic loop over
