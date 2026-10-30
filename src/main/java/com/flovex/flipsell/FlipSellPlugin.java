@@ -448,30 +448,21 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private void updatePlayerWorthLore(Player player) {
-        // PlayerInventory mixes storage, armor and offhand slots. Update them via their
-        // dedicated APIs instead of looping setItem(0..size), which can duplicate armor
-        // during inventory interactions on some server versions.
+        // Update slots individually. Never replace the full storage/armor arrays while
+        // players may be moving items; doing so can overwrite a vanilla inventory transaction.
         org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
-
-        ItemStack[] storage = inventory.getStorageContents();
-        boolean storageChanged = false;
-        for (ItemStack item : storage) {
-            if (item != null && updateWorthLore(item)) storageChanged = true;
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item != null && updateWorthLore(item)) inventory.setItem(slot, item);
         }
-        if (storageChanged) inventory.setStorageContents(storage);
-
         ItemStack[] armor = inventory.getArmorContents();
-        boolean armorChanged = false;
-        for (ItemStack item : armor) {
-            if (item != null && updateWorthLore(item)) armorChanged = true;
+        for (int slot = 0; slot < armor.length; slot++) {
+            ItemStack item = armor[slot];
+            if (item != null && updateWorthLore(item)) inventory.setArmorContents(armor);
         }
-        if (armorChanged) inventory.setArmorContents(armor);
-
         ItemStack offhand = inventory.getItemInOffHand();
         if (offhand != null && updateWorthLore(offhand)) inventory.setItemInOffHand(offhand);
-
         updateInventoryWorthLore(player.getEnderChest());
-
         ItemStack cursor = player.getItemOnCursor();
         if (updateWorthLore(cursor)) player.setItemOnCursor(cursor);
     }
