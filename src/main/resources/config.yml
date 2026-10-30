@@ -2,7 +2,7 @@
 settings:
   gui-title: '&8Sell Items'
   currency-symbol: '$'
-  money-decimals: 2
+  money-decimals: 2 # Decimal places used by compact money values
   sell-button-name: '&a&lSELL ITEMS'
   sell-button-material: LIME_STAINED_GLASS_PANE
 messages:
