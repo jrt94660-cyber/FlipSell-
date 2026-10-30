@@ -492,7 +492,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Integer savedIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
         double totalWorth = priceManager.getPrice(item) * item.getAmount();
         String symbol = getConfig().getString("settings.currency-symbol", "$");
-        String newLine = color("&a" + symbol + " &f" + formatAmount(totalWorth));
+        String newLine = color("&a" + symbol + " &f" + compactAmount(totalWorth));
         boolean hasMarker = pdc.has(worthLoreKey, PersistentDataType.BYTE);
 
         int previousIndex = previousLine == null ? -1
@@ -761,7 +761,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     private String compactAmount(double amount) {
         double value = Math.max(0.0, amount);
-        String[] suffixes = {"", "k", "m", "b", "t"};
+        String[] suffixes = {"", "k", "m", "b", "t", "q", "qq"};
         int suffix = 0;
         while (value >= 1000.0 && suffix < suffixes.length - 1) {
             value /= 1000.0;
@@ -777,7 +777,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private String money(double amount) {
-        return getConfig().getString("settings.currency-symbol", "$") + formatAmount(amount);
+        return getConfig().getString("settings.currency-symbol", "$") + compactAmount(amount);
     }
 
     private String color(String text) { return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text); }
