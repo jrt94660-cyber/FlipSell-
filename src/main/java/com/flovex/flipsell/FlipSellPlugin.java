@@ -71,13 +71,9 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (getCommand("sell") != null) getCommand("sell").setExecutor(this);
         if (getCommand("sellwand") != null) { getCommand("sellwand").setExecutor(this); getCommand("sellwand").setTabCompleter(this); }
         if (getCommand("flipsell") != null) { getCommand("flipsell").setExecutor(this); getCommand("flipsell").setTabCompleter(this); }
-        // Apply worth lore to player inventories and ender chests. The periodic pass
-        // also refreshes stack totals after consuming, splitting, or otherwise changing amounts.
-        // Do not run a repeating inventory rewrite: it can race vanilla slot moves and cause ghost/disappearing items.
-        for (Player online : Bukkit.getOnlinePlayers()) {
-            Bukkit.getScheduler().runTask(this, () -> updatePlayerWorthLore(online));
-        }
-        getLogger().info("FlipSell enabled. Worth lore is maintained across player inventories.");
+        // Keep live player/storage items untouched. Per-stack worth lore changes
+        // ItemStack similarity and can race vanilla shift-click transactions.
+        getLogger().info("FlipSell enabled. Live inventories are left untouched for safe vanilla stacking.");
         if (economy == null) getLogger().warning("Vault economy provider not found; sales will be disabled until Vault and an economy plugin are installed.");
     }
 
