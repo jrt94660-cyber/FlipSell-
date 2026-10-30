@@ -2,6 +2,12 @@
 
 Paper 1.21.11 through 26.3 selling GUI and limited-use Sell Wand plugin.
 
+## Version 1.0.7
+
+- Fixed normal stackable items failing to merge after receiving worth lore. Worth metadata is temporarily stripped from ordinary storage and participating container slots before inventory click and drag processing, then reapplied with updated totals.
+- Added dropped-item merge handling so worth lore does not prevent compatible ground items from merging.
+- Covers shift-clicks, cursor stacking, hotbar swaps, double-click collection and inventory drag operations while keeping equipped armor out of click-time bulk updates.
+
 ## Version 1.0.6
 
 - Fixed armor-slot duplication risk by separating player storage, armor, and offhand updates and avoiding bulk PlayerInventory slot rewrites during click events.
