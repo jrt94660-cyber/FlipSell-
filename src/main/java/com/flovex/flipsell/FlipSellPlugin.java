@@ -767,12 +767,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             value /= 1000.0;
             suffix++;
         }
-        // Normalize rounding boundaries (e.g. 999,999 -> 1.00m instead of 1000.00k).
-        if (suffix < suffixes.length - 1 && value >= 999.995) {
-            value /= 1000.0;
-            suffix++;
-        }
-        int decimals = Math.max(0, Math.min(4, getConfig().getInt("settings.money-decimals", 2)));\n        String pattern = decimals == 0 ? "0" : "0." + "0".repeat(decimals);\n        DecimalFormat compact = new DecimalFormat(pattern, DecimalFormatSymbols.getInstance(Locale.US));
+        int decimals = Math.max(0, Math.min(4, getConfig().getInt("settings.money-decimals", 2)));
+        DecimalFormat compact = new DecimalFormat(
+                decimals == 0 ? "0" : "0." + "0".repeat(decimals),
+                DecimalFormatSymbols.getInstance(Locale.US)
+        );
         return compact.format(value) + suffixes[suffix];
     }
 
