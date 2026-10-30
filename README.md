@@ -1,5 +1,12 @@
 # FlipSell
 
+## Version 1.0.8
+
+- Fixed disappearing/duplicating items during inventory and container slot moves by removing the repeating full-inventory refresh and updating individual slots only.
+- Worth metadata, including its saved lore index, is removed before vanilla stacking checks and restored after the move.
+- Worth lines now use the configured currency symbol, thousands separators, and configurable decimal places (`settings.currency-symbol` and `settings.money-decimals`).
+- Worth updates now refresh the open storage inventory after clicks and drags without replacing the player's entire storage array.
+
 Paper 1.21.11 through 26.3 selling GUI and limited-use Sell Wand plugin.
 
 ## Version 1.0.7
