@@ -71,9 +71,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (getCommand("sell") != null) getCommand("sell").setExecutor(this);
         if (getCommand("sellwand") != null) { getCommand("sellwand").setExecutor(this); getCommand("sellwand").setTabCompleter(this); }
         if (getCommand("flipsell") != null) { getCommand("flipsell").setExecutor(this); getCommand("flipsell").setTabCompleter(this); }
-        // Keep live player/storage items untouched. Per-stack worth lore changes
-        // ItemStack similarity and can race vanilla shift-click transactions.
-        getLogger().info("FlipSell enabled. Live inventories are left untouched for safe vanilla stacking.");
+        // Restore display lore once inventories are loaded; refresh only after transactions finish.
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            Bukkit.getScheduler().runTask(this, () -> updatePlayerWorthLore(online));
+        }
+        getLogger().info("FlipSell enabled. Worth lore updates run after inventory transactions.");
         if (economy == null) getLogger().warning("Vault economy provider not found; sales will be disabled until Vault and an economy plugin are installed.");
     }
 
@@ -153,6 +155,36 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         openMenus.put(player.getUniqueId(), holder);
         refreshPreview(inventory);
         player.openInventory(inventory);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryClickWorthRefresh(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        // Do not mutate items during the click event. Let Minecraft finish its
+        // transaction first, then refresh the visible worth lore on the next tick.
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline()) return;
+            updatePlayerWorthLore(player);
+            updateInventoryWorthLore(player.getOpenInventory().getTopInventory());
+        });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryDragWorthRefresh(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline()) return;
+            updatePlayerWorthLore(player);
+            updateInventoryWorthLore(player.getOpenInventory().getTopInventory());
+        });
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) updatePlayerWorthLore(player);
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -334,6 +366,34 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             remaining -= transfer;
         }
         return initial - remaining;
+    }
+
+    private void updatePlayerWorthLore(Player player) {
+        org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item != null && updateWorthLore(item)) inventory.setItem(slot, item);
+        }
+        ItemStack[] armor = inventory.getArmorContents();
+        boolean armorChanged = false;
+        for (int slot = 0; slot < armor.length; slot++) {
+            ItemStack item = armor[slot];
+            if (item != null && updateWorthLore(item)) armorChanged = true;
+        }
+        if (armorChanged) inventory.setArmorContents(armor);
+        ItemStack offhand = inventory.getItemInOffHand();
+        if (offhand != null && updateWorthLore(offhand)) inventory.setItemInOffHand(offhand);
+        updateInventoryWorthLore(player.getEnderChest());
+        ItemStack cursor = player.getItemOnCursor();
+        if (cursor != null && updateWorthLore(cursor)) player.setItemOnCursor(cursor);
+    }
+
+    private void updateInventoryWorthLore(Inventory inventory) {
+        if (inventory == null) return;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item != null && !item.getType().isAir() && updateWorthLore(item)) inventory.setItem(slot, item);
+        }
     }
 
     private int findCategoryLoreIndex(List<String> lore) {
