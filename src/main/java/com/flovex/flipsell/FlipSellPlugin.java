@@ -396,6 +396,47 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
     }
 
+    private boolean updateWorthLore(ItemStack item) {
+        if (item == null || item.getType().isAir() || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return false;
+
+        List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+        var pdc = meta.getPersistentDataContainer();
+        boolean hadWorth = pdc.has(worthLoreKey, PersistentDataType.BYTE);
+        if (hadWorth) {
+            String oldLine = pdc.get(worthLineKey, PersistentDataType.STRING);
+            Integer oldIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+            if (oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
+                    && (oldLine == null || lore.get(oldIndex).equals(oldLine))) {
+                lore.remove((int) oldIndex);
+            } else if (oldLine != null) {
+                lore.remove(oldLine);
+            }
+            pdc.remove(worthLoreKey);
+            pdc.remove(worthLineKey);
+            pdc.remove(worthIndexKey);
+        }
+
+        double unitPrice = priceManager.getPrice(item);
+        if (unitPrice <= 0.0) {
+            meta.setLore(lore.isEmpty() ? null : lore);
+            item.setItemMeta(meta);
+            return hadWorth;
+        }
+
+        String line = color("&a$ &f" + compactAmount(unitPrice * item.getAmount()));
+        int categoryIndex = findCategoryLoreIndex(lore);
+        int insertAt = categoryIndex >= 0 ? categoryIndex + 1 : lore.size();
+        lore.add(insertAt, line);
+        pdc.set(worthLoreKey, PersistentDataType.BYTE, (byte) 1);
+        pdc.set(worthLineKey, PersistentDataType.STRING, line);
+        pdc.set(worthIndexKey, PersistentDataType.INTEGER, insertAt);
+        meta.setLore(lore);
+        item.setItemMeta(meta);
+        return true;
+    }
+
     private int findCategoryLoreIndex(List<String> lore) {
         for (int i = 0; i < lore.size(); i++) {
             String line = ChatColor.stripColor(lore.get(i));
