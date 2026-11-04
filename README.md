@@ -1,6 +1,6 @@
 # FlipSell
 
-## Version 1.1.1
+## Version 1.1.2
 
 - Finalized compact money suffixes: `k`, `m`, `b`, `t`, `q`, and `qq` (powers of 1,000).
 - Worth lore, sell totals, and Sell Wand payout messages use compact money formatting with two decimal places.
