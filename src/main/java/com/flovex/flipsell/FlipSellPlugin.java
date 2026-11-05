@@ -165,7 +165,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
             updatePlayerWorthLore(player);
-            updateInventoryWorthLore(player.getOpenInventory().getTopInventory());
+            Inventory top = player.getOpenInventory().getTopInventory();
+            if (!(top.getHolder(false) instanceof SellMenuHolder)) updateInventoryWorthLore(top);
         });
     }
 
@@ -397,7 +398,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private boolean updateWorthLore(ItemStack item) {
-        if (item == null || item.getType().isAir() || !item.hasItemMeta()) return false;
+        if (item == null || item.getType().isAir()) return false;
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return false;
 
@@ -425,7 +426,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             return hadWorth;
         }
 
-        String line = color("&a$ &f" + compactAmount(unitPrice * item.getAmount()));
+        String line = color("&a$ &f" + compactAmount(unitPrice) + " &7each");
         int categoryIndex = findCategoryLoreIndex(lore);
         int insertAt = categoryIndex >= 0 ? categoryIndex + 1 : lore.size();
         lore.add(insertAt, line);
