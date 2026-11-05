@@ -405,9 +405,12 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
         var pdc = meta.getPersistentDataContainer();
         boolean hadWorth = pdc.has(worthLoreKey, PersistentDataType.BYTE);
-        if (hadWorth) {
-            String oldLine = pdc.get(worthLineKey, PersistentDataType.STRING);
-            Integer oldIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+        String oldLine = pdc.get(worthLineKey, PersistentDataType.STRING);
+        Integer oldIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+
+        double unitPrice = priceManager.getPrice(item);
+        if (unitPrice <= 0.0) {
+            if (!hadWorth) return false;
             if (oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
                     && (oldLine == null || lore.get(oldIndex).equals(oldLine))) {
                 lore.remove((int) oldIndex);
@@ -417,16 +420,29 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             pdc.remove(worthLoreKey);
             pdc.remove(worthLineKey);
             pdc.remove(worthIndexKey);
-        }
-
-        double unitPrice = priceManager.getPrice(item);
-        if (unitPrice <= 0.0) {
             meta.setLore(lore.isEmpty() ? null : lore);
             item.setItemMeta(meta);
-            return hadWorth;
+            return true;
         }
 
+        // Use per-item value, not stack total: the lore stays identical as stacks
+        // split/merge, so Minecraft can perform normal inventory transactions.
         String line = color("&a$ &f" + compactAmount(unitPrice) + " &7each");
+        if (hadWorth && oldLine != null && oldLine.equals(line)
+                && oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
+                && lore.get(oldIndex).equals(line)) {
+            return false; // Already correct; do not rewrite item metadata on every click.
+        }
+
+        if (hadWorth) {
+            if (oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
+                    && (oldLine == null || lore.get(oldIndex).equals(oldLine))) {
+                lore.remove((int) oldIndex);
+            } else if (oldLine != null) {
+                lore.remove(oldLine);
+            }
+        }
+
         int categoryIndex = findCategoryLoreIndex(lore);
         int insertAt = categoryIndex >= 0 ? categoryIndex + 1 : lore.size();
         lore.add(insertAt, line);
