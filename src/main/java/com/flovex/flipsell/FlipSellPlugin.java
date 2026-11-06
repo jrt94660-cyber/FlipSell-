@@ -164,9 +164,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         // transaction first, then refresh the visible worth lore on the next tick.
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
+            // Only decorate the player's own inventory after the transaction.
+            // Never touch the open top inventory: third-party shop GUIs (including
+            // SMPShop) own those display items and their click/drag transactions.
             updatePlayerWorthLore(player);
-            Inventory top = player.getOpenInventory().getTopInventory();
-            if (!(top.getHolder(false) instanceof SellMenuHolder)) updateInventoryWorthLore(top);
         });
     }
 
@@ -175,8 +176,9 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
+            // Drag transactions may involve third-party shop GUIs. Refresh only
+            // the player's inventory after Bukkit has completed the drag.
             updatePlayerWorthLore(player);
-            updateInventoryWorthLore(player.getOpenInventory().getTopInventory());
         });
     }
 
@@ -242,12 +244,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             event.setCancelled(true);
             return;
         }
-        // Remove temporary preview lore before Bukkit performs normal stack/merge logic.
-        // It is reapplied on the next tick so previews do not interfere with stacking.
-        stripPreviewFromInventory(holder.getInventory());
-        ItemStack cursor = event.getCursor();
-        stripPreview(cursor);
-        event.setCursor(cursor);
+        // Do not change item metadata while Bukkit is processing this click.
         Bukkit.getScheduler().runTask(this, () -> {
             if (event.getWhoClicked() instanceof Player player) cleanPlayerPreview(player);
             if (holder.getInventory() != null && holder.getInventory().getViewers().size() > 0) refreshPreview(holder.getInventory());
@@ -260,10 +257,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         for (int raw : event.getRawSlots()) {
             if (raw >= INPUT_SLOTS && raw < GUI_SIZE) { event.setCancelled(true); return; }
         }
-        stripPreviewFromInventory(holder.getInventory());
-        ItemStack dragCursor = event.getCursor();
-        stripPreview(dragCursor);
-        event.setCursor(dragCursor);
+        // Do not change item metadata while Bukkit is processing this drag.
         Bukkit.getScheduler().runTask(this, () -> {
             if (event.getWhoClicked() instanceof Player player) cleanPlayerPreview(player);
             refreshPreview(holder.getInventory());
@@ -384,9 +378,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (armorChanged) inventory.setArmorContents(armor);
         ItemStack offhand = inventory.getItemInOffHand();
         if (offhand != null && updateWorthLore(offhand)) inventory.setItemInOffHand(offhand);
-        updateInventoryWorthLore(player.getEnderChest());
-        ItemStack cursor = player.getItemOnCursor();
-        if (cursor != null && updateWorthLore(cursor)) player.setItemOnCursor(cursor);
+        // Do not mutate the ender chest or cursor during routine inventory
+        // interactions. Both can participate in vanilla stack/drag operations.
     }
 
     private void updateInventoryWorthLore(Inventory inventory) {
@@ -484,10 +477,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         stripPreview(player.getInventory().getItemInOffHand());
     }
 
-    private void stripPreview(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) return;
+    private boolean stripPreview(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
         ItemMeta meta = item.getItemMeta();
-        if (meta == null || !meta.getPersistentDataContainer().has(previewKey, PersistentDataType.BYTE)) return;
+        if (meta == null || !meta.getPersistentDataContainer().has(previewKey, PersistentDataType.BYTE)) return false;
         if (meta.hasLore()) {
             List<String> currentLore = new ArrayList<>(meta.getLore());
             int marker = currentLore.indexOf(color("&0FS_PREVIEW"));
@@ -502,6 +495,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
         meta.getPersistentDataContainer().remove(previewKey);
         item.setItemMeta(meta);
+        return true;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
