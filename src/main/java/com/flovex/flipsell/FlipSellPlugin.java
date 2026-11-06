@@ -318,7 +318,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         for (int slot = 0; slot < INPUT_SLOTS; slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
-            stripPreview(item);
+            boolean cleanedLegacyPreview = stripPreview(item);
+            if (cleanedLegacyPreview) inventory.setItem(slot, item);
             double unit = priceManager.getPrice(item); // Custom display names do not affect material pricing.
             int amount = item.getAmount();
             double stackTotal = unit * amount;
@@ -326,7 +327,6 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
                 total += stackTotal;
                 itemCount += amount;
             }
-            inventory.setItem(slot, item);
         }
         Material buttonMaterial = parseMaterial(getConfig().getString("settings.sell-button-material", "LIME_STAINED_GLASS_PANE"), Material.LIME_STAINED_GLASS_PANE);
         String name = color(getConfig().getString("settings.sell-button-name", "&a&lSELL ITEMS"));
