@@ -1,5 +1,5 @@
 name: FlipSell
-version: 1.1.5
+version: 1.1.6
 main: com.flovex.flipsell.FlipSellPlugin
 api-version: '1.21.11'
 authors: [FlovexSMP]
@@ -15,6 +15,10 @@ commands:
     description: Gives a limited-use Sell Wand.
     usage: /sellwand give <player> <uses>
     permission: flipsell.sellwand.give
+  worth:
+    description: Opens the item worth search menu.
+    usage: /worth
+    permission: flipsell.worth
   flipsell:
     description: FlipSell admin commands.
     usage: /flipsell reload
@@ -29,3 +33,6 @@ permissions:
   flipsell.admin:
     description: Allows reloading FlipSell.
     default: op
+  flipsell.worth:
+    description: Allows searching item worth.
+    default: true
