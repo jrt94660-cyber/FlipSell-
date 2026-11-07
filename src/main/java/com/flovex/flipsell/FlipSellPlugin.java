@@ -85,6 +85,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         for (Player online : Bukkit.getOnlinePlayers()) {
             Bukkit.getScheduler().runTask(this, () -> updatePlayerWorthLore(online));
         }
+        // Repair any items introduced by crafting, pickups, plugin rewards or
+        // older versions. The updater is idempotent and only writes changed items.
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            for (Player online : Bukkit.getOnlinePlayers()) updatePlayerWorthLore(online);
+        }, 20L, 20L);
         getLogger().info("FlipSell enabled. Worth lore updates run after inventory transactions.");
         if (economy == null) getLogger().warning("Vault economy provider not found; sales will be disabled until Vault and an economy plugin are installed.");
     }
@@ -206,6 +211,24 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Inventory inventory = event.getInventory();
         if (!(inventory.getHolder(false) instanceof org.bukkit.block.BlockState)) return;
         Bukkit.getScheduler().runTask(this, () -> updateInventoryWorthLore(inventory));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onItemPickupWorthRefresh(EntityPickupItemEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) updatePlayerWorthLore(player);
+        });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onItemDropWorthRefresh(PlayerDropItemEvent event) {
+        var dropped = event.getItemDrop();
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!dropped.isValid()) return;
+            ItemStack stack = dropped.getItemStack();
+            if (updateWorthLore(stack)) dropped.setItemStack(stack);
+        });
     }
 
     @EventHandler
@@ -485,17 +508,12 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         var pdc = meta.getPersistentDataContainer();
         boolean hadWorth = pdc.has(worthLoreKey, PersistentDataType.BYTE);
         String oldLine = pdc.get(worthLineKey, PersistentDataType.STRING);
-        Integer oldIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+        Integer legacyIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
 
         double unitPrice = priceManager.getPrice(item);
         if (unitPrice <= 0.0) {
-            if (!hadWorth) return false;
-            if (oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
-                    && (oldLine == null || lore.get(oldIndex).equals(oldLine))) {
-                lore.remove((int) oldIndex);
-            } else if (oldLine != null) {
-                lore.remove(oldLine);
-            }
+            if (!hadWorth && oldLine == null && legacyIndex == null) return false;
+            if (oldLine != null) lore.remove(oldLine);
             pdc.remove(worthLoreKey);
             pdc.remove(worthLineKey);
             pdc.remove(worthIndexKey);
@@ -504,30 +522,29 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             return true;
         }
 
-        // Use per-item value, not stack total: the lore stays identical as stacks
-        // split/merge, so Minecraft can perform normal inventory transactions.
+        // A fixed per-item line is intentional: stack-total lore changes with
+        // amount and makes otherwise identical Minecraft stacks incompatible.
         String line = color("&a$ &f" + compactAmount(unitPrice) + " &7each");
-        if (hadWorth && oldLine != null && oldLine.equals(line)
-                && oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
-                && lore.get(oldIndex).equals(line)) {
-            return false; // Already correct; do not rewrite item metadata on every click.
-        }
+        boolean alreadyCanonical = hadWorth && line.equals(oldLine)
+                && lore.contains(line)
+                && !pdc.has(worthIndexKey, PersistentDataType.INTEGER);
+        if (alreadyCanonical) return false;
 
-        if (hadWorth) {
-            if (oldIndex != null && oldIndex >= 0 && oldIndex < lore.size()
-                    && (oldLine == null || lore.get(oldIndex).equals(oldLine))) {
-                lore.remove((int) oldIndex);
-            } else if (oldLine != null) {
-                lore.remove(oldLine);
+        // Migrate older lore versions to one canonical line at the end. The
+        // same material + same original metadata now gets identical lore/PDC,
+        // regardless of stack size or the old insertion index.
+        if (oldLine != null) lore.remove(oldLine);
+        if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < lore.size()) {
+            String possibleLegacyLine = lore.get(legacyIndex);
+            if (possibleLegacyLine.equals(line) || possibleLegacyLine.contains("each")) {
+                lore.remove((int) legacyIndex);
             }
         }
-
-        int categoryIndex = findCategoryLoreIndex(lore);
-        int insertAt = categoryIndex >= 0 ? categoryIndex + 1 : lore.size();
-        lore.add(insertAt, line);
+        lore.remove(line);
+        lore.add(line);
         pdc.set(worthLoreKey, PersistentDataType.BYTE, (byte) 1);
         pdc.set(worthLineKey, PersistentDataType.STRING, line);
-        pdc.set(worthIndexKey, PersistentDataType.INTEGER, insertAt);
+        pdc.remove(worthIndexKey);
         meta.setLore(lore);
         item.setItemMeta(meta);
         return true;
