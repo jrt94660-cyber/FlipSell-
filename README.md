@@ -1,5 +1,14 @@
 # FlipSell
 
+## Version 1.1.6
+
+- Reworked worth lore into a canonical per-item line with matching persistent metadata so stack amount changes do not alter item similarity.
+- Migrates older worth lore metadata and corrects outdated prices without repeatedly rewriting unchanged items.
+- Refreshes player inventory worth lore after transactions, on pickups/drops, and periodically; vanilla block-backed containers are updated without touching custom shop inventories.
+- Excludes custom shop GUIs such as SMPShop from worth lore changes.
+- Added `/worth`: a chest GUI Search button opens a native dialog with an item input and compact Confirm/Cancel buttons. Search results show per-item and full-stack worth using `price.yml`.
+
+
 ## Version 1.1.2
 
 - Finalized compact money suffixes: `k`, `m`, `b`, `t`, `q`, and `qq` (powers of 1,000).
