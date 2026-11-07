@@ -61,7 +61,22 @@ public final class PriceManager {
                 || n.contains("structure_block") || n.equals("structure_void") || n.equals("jigsaw")
                 || n.equals("light") || n.equals("bedrock") || n.equals("end_portal_frame")
                 || n.equals("knowledge_book") || n.equals("reinforced_deepslate")) return 0.0;
-        if (n.contains("netherite") || n.equals("ancient_debris") || n.equals("nether_star")) return 35.0;
+        // High-value FlovexSMP rare-item defaults (prices are per item).
+        if (n.equals("elytra")) return 200_000_000.0;
+        if (n.equals("dragon_head")) return 70_000_000.0;
+        if (n.equals("dragon_egg")) return 20_000_000.0;
+        if (n.equals("beacon")) return 30_000_000.0;
+        if (n.equals("netherite_block")) return 6_000_000.0;
+        if (n.equals("netherite_chestplate")) return 6_000_000.0;
+        if (n.equals("netherite_leggings")) return 5_000_000.0;
+        if (n.equals("netherite_helmet") || n.equals("netherite_boots") || n.equals("netherite_horse_armor")) return 4_000_000.0;
+        if (n.equals("netherite_pickaxe")) return 3_500_000.0;
+        if (n.equals("netherite_sword") || n.equals("netherite_axe")) return 3_000_000.0;
+        if (n.equals("netherite_shovel")) return 2_000_000.0;
+        if (n.equals("netherite_hoe") || n.equals("netherite_ingot")) return 1_500_000.0;
+        if (n.equals("netherite_scrap") || n.equals("ancient_debris") || n.equals("netherite_upgrade_smithing_template")) return 1_000_000.0;
+        if (n.contains("netherite")) return 1_000_000.0;
+        if (n.equals("nether_star")) return 35.0;
         if (n.contains("diamond")) return 12.0;
         if (n.contains("emerald")) return 9.0;
         if (n.contains("amethyst")) return 1.25;
