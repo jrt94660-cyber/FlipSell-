@@ -49,10 +49,40 @@ public final class PriceManager {
 
     public synchronized double getPrice(ItemStack item) {
         if (item == null || item.getType().isAir()) return 0.0;
-        return Math.max(0.0, prices.getDouble(item.getType().name(), 0.0));
+        return Math.max(0.0, parsePrice(prices.get(item.getType().name())));
     }
 
     public synchronized boolean isSellable(ItemStack item) { return getPrice(item) > 0.0; }
+
+    /**
+     * Accepts plain numbers or compact values in price.yml, e.g. 1.5k, 2m,
+     * 3b, 4t and 5q. Values are still stored as the full numeric amount internally.
+     */
+    private double parsePrice(Object raw) {
+        if (raw == null) return 0.0;
+        if (raw instanceof Number number) return number.doubleValue();
+        String value = String.valueOf(raw).trim().toLowerCase(Locale.ROOT)
+                .replace(",", "").replace("$", "").replace(" ", "");
+        if (value.isEmpty()) return 0.0;
+        double multiplier = 1.0;
+        char suffix = value.charAt(value.length() - 1);
+        switch (suffix) {
+            case 'k' -> { multiplier = 1_000.0; value = value.substring(0, value.length() - 1); }
+            case 'm' -> { multiplier = 1_000_000.0; value = value.substring(0, value.length() - 1); }
+            case 'b' -> { multiplier = 1_000_000_000.0; value = value.substring(0, value.length() - 1); }
+            case 't' -> { multiplier = 1_000_000_000_000.0; value = value.substring(0, value.length() - 1); }
+            case 'q' -> { multiplier = 1_000_000_000_000_000.0; value = value.substring(0, value.length() - 1); }
+            default -> { }
+        }
+        try {
+            double parsed = Double.parseDouble(value) * multiplier;
+            return Double.isFinite(parsed) ? parsed : 0.0;
+        } catch (NumberFormatException ex) {
+            plugin.getLogger().warning("Invalid price value '" + raw + "' in price.yml; treating it as 0.");
+            return 0.0;
+        }
+    }
+
 
     private double defaultPrice(Material material) {
         String n = material.name().toLowerCase(Locale.ROOT);
