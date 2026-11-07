@@ -484,8 +484,8 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         String display = material.name().toLowerCase(Locale.ROOT).replace('_', ' ');
         player.sendMessage(color("&8&m--------------------------------"));
         player.sendMessage(color("&b&lWORTH &8» &f" + display));
-        player.sendMessage(color("&7Per item: &a$ &f" + formatAmount(unit)));
-        player.sendMessage(color("&7Full stack (" + material.getMaxStackSize() + "): &a$ &f" + formatAmount(stack)));
+        player.sendMessage(color("&7Per item: &a$ &f" + compactAmount(unit)));
+        player.sendMessage(color("&7Full stack (" + material.getMaxStackSize() + "): &a$ &f" + compactAmount(stack)));
         player.sendMessage(color("&8&m--------------------------------"));
         openWorthMenu(player, material);
     }
@@ -764,7 +764,9 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     private String compactAmount(double amount) {
         double value = Math.max(0.0, amount);
-        String[] suffixes = {"", "k", "m", "b", "t", "q", "qq"};
+        // Donut-style compact currency: 950, 1.25k, 3.4m, 2b, 7t, 1q.
+        // q is the largest suffix; values above that remain expressed in q.
+        String[] suffixes = {"", "k", "m", "b", "t", "q"};
         int suffix = 0;
         while (value >= 1000.0 && suffix < suffixes.length - 1) {
             value /= 1000.0;
@@ -772,9 +774,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         }
         int decimals = Math.max(0, Math.min(4, getConfig().getInt("settings.money-decimals", 2)));
         DecimalFormat compact = new DecimalFormat(
-                decimals == 0 ? "0" : "0." + "0".repeat(decimals),
+                decimals == 0 ? "0" : "0." + "#".repeat(decimals),
                 DecimalFormatSymbols.getInstance(Locale.US)
         );
+        compact.setGroupingUsed(false);
         return compact.format(value) + suffixes[suffix];
     }
 
