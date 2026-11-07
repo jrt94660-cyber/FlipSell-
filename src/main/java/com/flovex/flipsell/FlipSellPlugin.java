@@ -498,8 +498,9 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (armorChanged) inventory.setArmorContents(armor);
         ItemStack offhand = inventory.getItemInOffHand();
         if (offhand != null && updateWorthLore(offhand)) inventory.setItemInOffHand(offhand);
-        // Do not mutate the ender chest or cursor during routine inventory
-        // interactions. Both can participate in vanilla stack/drag operations.
+        // The cursor is refreshed only after the transaction has completed.
+        ItemStack cursor = player.getItemOnCursor();
+        if (cursor != null && updateWorthLore(cursor)) player.setItemOnCursor(cursor);
     }
 
     private void updateInventoryWorthLore(Inventory inventory) {
@@ -524,7 +525,12 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         double unitPrice = priceManager.getPrice(item);
         if (unitPrice <= 0.0) {
             if (!hadWorth && oldLine == null && legacyIndex == null) return false;
-            if (oldLine != null) lore.remove(oldLine);
+            if (oldLine != null) {
+                lore.remove(oldLine);
+            } else if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < lore.size()) {
+                String legacy = ChatColor.stripColor(lore.get(legacyIndex));
+                if (legacy != null && legacy.startsWith("$ ") && legacy.endsWith(" each")) lore.remove((int) legacyIndex);
+            }
             pdc.remove(worthLoreKey);
             pdc.remove(worthLineKey);
             pdc.remove(worthIndexKey);
