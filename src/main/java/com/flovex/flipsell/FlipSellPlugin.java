@@ -429,12 +429,23 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private void openWorthMenu(Player player) {
+        openWorthMenu(player, null);
+    }
+
+    private void openWorthMenu(Player player, Material result) {
         WorthMenuHolder holder = new WorthMenuHolder();
         Inventory inventory = Bukkit.createInventory(holder, 27, color("&8Worth Menu"));
         holder.setInventory(inventory);
         inventory.setItem(WORTH_SEARCH_SLOT, namedItem(Material.COMPASS,
                 color("&b&lSEARCH ITEM"),
                 List.of(color("&7Click to search an item's worth"), color("&8Uses your configured price.yml"))));
+        if (result != null) {
+            double unit = priceManager.getPrice(new ItemStack(result));
+            inventory.setItem(15, namedItem(result,
+                    color("&e&l" + result.name().toLowerCase(Locale.ROOT).replace('_', ' ')),
+                    List.of(color("&7Per item: &a$ &f" + compactAmount(unit)),
+                            color("&7Full stack: &a$ &f" + compactAmount(unit * result.getMaxStackSize())))));
+        }
         player.openInventory(inventory);
     }
 
@@ -469,7 +480,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         player.sendMessage(color("&7Per item: &a$ &f" + formatAmount(unit)));
         player.sendMessage(color("&7Full stack (" + material.getMaxStackSize() + "): &a$ &f" + formatAmount(stack)));
         player.sendMessage(color("&8&m--------------------------------"));
-        openWorthMenu(player);
+        openWorthMenu(player, material);
     }
 
     private void updatePlayerWorthLore(Player player) {
