@@ -1,5 +1,12 @@
 package com.flovex.flipsell;
 
+import io.papermc.paper.dialog.Dialog;
+import io.papermc.paper.registry.data.dialog.ActionButton;
+import io.papermc.paper.registry.data.dialog.DialogBase;
+import io.papermc.paper.registry.data.dialog.action.DialogAction;
+import io.papermc.paper.registry.data.dialog.input.DialogInput;
+import io.papermc.paper.registry.data.dialog.type.DialogType;
+import net.kyori.adventure.text.Component;
 import net.milkbowl.vault.economy.Economy;
 import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
@@ -22,6 +29,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ItemMergeEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -47,6 +55,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private static final int GUI_SIZE = 54;
     private static final int INPUT_SLOTS = 45;
     private static final int SELL_SLOT = 53;
+    private static final int WORTH_SEARCH_SLOT = 13;
     private Economy economy;
     private PriceManager priceManager;
     private NamespacedKey wandKey;
@@ -69,6 +78,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         setupEconomy();
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("sell") != null) getCommand("sell").setExecutor(this);
+        if (getCommand("worth") != null) getCommand("worth").setExecutor(this);
         if (getCommand("sellwand") != null) { getCommand("sellwand").setExecutor(this); getCommand("sellwand").setTabCompleter(this); }
         if (getCommand("flipsell") != null) { getCommand("flipsell").setExecutor(this); getCommand("flipsell").setTabCompleter(this); }
         // Restore display lore once inventories are loaded; refresh only after transactions finish.
@@ -98,6 +108,15 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String cmd = command.getName().toLowerCase(Locale.ROOT);
+        if (cmd.equals("worth")) {
+            if (!(sender instanceof Player player)) { sender.sendMessage("Only players can use this command."); return true; }
+            if (args.length >= 2 && args[0].equalsIgnoreCase("search")) {
+                showWorthResult(player, String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)));
+            } else {
+                openWorthMenu(player);
+            }
+            return true;
+        }
         if (cmd.equals("sell")) {
             if (!(sender instanceof Player player)) { sender.sendMessage("Only players can use this command."); return true; }
             if (!sender.hasPermission("flipsell.sell")) { message(sender, "no-permission"); return true; }
@@ -164,10 +183,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         // transaction first, then refresh the visible worth lore on the next tick.
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
-            // Only decorate the player's own inventory after the transaction.
-            // Never touch the open top inventory: third-party shop GUIs (including
-            // SMPShop) own those display items and their click/drag transactions.
+            // Decorate the player's inventory and only vanilla block-backed
+            // containers. Never touch custom plugin shop inventories (e.g. SMPShop).
             updatePlayerWorthLore(player);
+            updateVanillaContainerWorthLore(player.getOpenInventory().getTopInventory());
         });
     }
 
@@ -176,10 +195,17 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
-            // Drag transactions may involve third-party shop GUIs. Refresh only
-            // the player's inventory after Bukkit has completed the drag.
+            // Refresh the player inventory and a vanilla block container after the drag.
             updatePlayerWorthLore(player);
+            updateVanillaContainerWorthLore(player.getOpenInventory().getTopInventory());
         });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryOpenWorthRefresh(InventoryOpenEvent event) {
+        Inventory inventory = event.getInventory();
+        if (!(inventory.getHolder(false) instanceof org.bukkit.block.BlockState)) return;
+        Bukkit.getScheduler().runTask(this, () -> updateInventoryWorthLore(inventory));
     }
 
     @EventHandler
@@ -192,6 +218,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuClick(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder(false) instanceof WorthMenuHolder) {
+            event.setCancelled(true);
+            if (event.getRawSlot() == WORTH_SEARCH_SLOT && event.getWhoClicked() instanceof Player player) showWorthSearchDialog(player);
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder(false) instanceof SellMenuHolder holder)) return;
         int raw = event.getRawSlot();
         if (raw == SELL_SLOT) {
@@ -252,6 +283,10 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuDrag(InventoryDragEvent event) {
+        if (event.getView().getTopInventory().getHolder(false) instanceof WorthMenuHolder) {
+            event.setCancelled(true);
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder(false) instanceof SellMenuHolder holder)) return;
         for (int raw : event.getRawSlots()) {
             if (raw >= INPUT_SLOTS && raw < GUI_SIZE) { event.setCancelled(true); return; }
@@ -360,6 +395,58 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             remaining -= transfer;
         }
         return initial - remaining;
+    }
+
+    private void updateVanillaContainerWorthLore(Inventory inventory) {
+        if (inventory == null || inventory.getHolder(false) instanceof SellMenuHolder
+                || inventory.getHolder(false) instanceof WorthMenuHolder) return;
+        if (inventory.getHolder(false) instanceof org.bukkit.block.BlockState) {
+            updateInventoryWorthLore(inventory);
+        }
+    }
+
+    private void openWorthMenu(Player player) {
+        WorthMenuHolder holder = new WorthMenuHolder();
+        Inventory inventory = Bukkit.createInventory(holder, 27, color("&8Worth Menu"));
+        holder.setInventory(inventory);
+        inventory.setItem(WORTH_SEARCH_SLOT, namedItem(Material.COMPASS,
+                color("&b&lSEARCH ITEM"),
+                List.of(color("&7Click to search an item's worth"), color("&8Uses your configured price.yml"))));
+        player.openInventory(inventory);
+    }
+
+    private void showWorthSearchDialog(Player player) {
+        Dialog dialog = Dialog.create(builder -> builder.empty()
+                .base(DialogBase.builder(Component.text("Search Item Worth"))
+                        .inputs(List.of(DialogInput.text("item", Component.text("Item name or material"))
+                                .width(240).maxLength(64).labelVisible(true).initial("").build()))
+                        .canCloseWithEscape(true)
+                        .build())
+                .type(DialogType.confirmation(
+                        ActionButton.create(Component.text("Confirm"), Component.text("Search this item"), 100,
+                                DialogAction.commandTemplate("worth search $(item)")),
+                        ActionButton.create(Component.text("Cancel"), Component.text("Close without searching"), 100, null)
+                )));
+        player.showDialog(dialog);
+    }
+
+    private void showWorthResult(Player player, String input) {
+        String normalized = input == null ? "" : input.trim().replace(' ', '_');
+        Material material = Material.matchMaterial(normalized);
+        if (material == null || !material.isItem() || material.isAir()) {
+            player.sendMessage(color("&cUnknown item. Try a material name such as DIAMOND or DIAMOND_SWORD."));
+            openWorthMenu(player);
+            return;
+        }
+        double unit = priceManager.getPrice(new ItemStack(material));
+        double stack = unit * material.getMaxStackSize();
+        String display = material.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        player.sendMessage(color("&8&m--------------------------------"));
+        player.sendMessage(color("&b&lWORTH &8» &f" + display));
+        player.sendMessage(color("&7Per item: &a$ &f" + formatAmount(unit)));
+        player.sendMessage(color("&7Full stack (" + material.getMaxStackSize() + "): &a$ &f" + formatAmount(stack)));
+        player.sendMessage(color("&8&m--------------------------------"));
+        openWorthMenu(player);
     }
 
     private void updatePlayerWorthLore(Player player) {
