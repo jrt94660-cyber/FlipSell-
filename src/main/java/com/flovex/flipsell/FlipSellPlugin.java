@@ -669,7 +669,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private ItemStack createWand(int uses) {
         ItemStack item = new ItemStack(Material.NETHERITE_AXE);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(color("&d&lˢᵉˡˡʷᵃⁿᵈ"));
+        meta.setDisplayName(color("&#A503FCᴀᴍᴇᴛʜʏsᴛ sᴇʟʟᴀxᴇ"));
         meta.setLore(wandLore(uses));
         meta.addEnchant(Enchantment.EFFICIENCY, 5, true);
         meta.addEnchant(Enchantment.UNBREAKING, 3, true);
