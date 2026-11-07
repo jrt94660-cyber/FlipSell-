@@ -1,0 +1,15 @@
+# Sellwand item appearance. Changes apply to newly issued sellwands.
+# Reload this file in-game with /flipsell reload.
+item:
+  material: NETHERITE_AXE
+  name: "&#A503FCᴀᴍᴇᴛʜʏsᴛ sᴇʟʟᴀxᴇ"
+  lore:
+    - "&7Instantly sell priced items inside a chest."
+    - "&7The chest is not broken."
+    - ""
+    - "&7Uses remaining: &d{uses}"
+    - "&eLeft- or right-click a chest to sell"
+  enchantments:
+    - "EFFICIENCY:5"
+    - "UNBREAKING:3"
+    - "MENDING:1"
