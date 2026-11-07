@@ -19,6 +19,9 @@ import org.bukkit.block.Chest;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import java.io.File;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -58,6 +61,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     private static final int WORTH_SEARCH_SLOT = 13;
     private Economy economy;
     private PriceManager priceManager;
+    private FileConfiguration sellWandConfig;
     private NamespacedKey wandKey;
     private NamespacedKey usesKey;
     private NamespacedKey previewKey;
@@ -68,6 +72,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
 
     @Override public void onEnable() {
         saveDefaultConfig();
+        reloadSellWandConfig();
         priceManager = new PriceManager(this);
         wandKey = new NamespacedKey(this, "sell_wand");
         usesKey = new NamespacedKey(this, "sell_uses");
@@ -147,7 +152,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (cmd.equals("flipsell")) {
             if (!sender.hasPermission("flipsell.admin")) { message(sender, "no-permission"); return true; }
             if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
-                reloadConfig(); priceManager.reload(); setupEconomy(); message(sender, "reloaded"); return true;
+                reloadConfig(); reloadSellWandConfig(); priceManager.reload(); setupEconomy(); message(sender, "reloaded"); return true;
             }
             sender.sendMessage(color("&eUsage: /flipsell reload"));
             return true;
@@ -666,14 +671,33 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8f, 1.4f);
     }
 
+    private void reloadSellWandConfig() {
+        File file = new File(getDataFolder(), "sellwand.yml");
+        if (!file.exists()) {
+            getDataFolder().mkdirs();
+            try { saveResource("sellwand.yml", false); }
+            catch (IllegalArgumentException ex) { getLogger().severe("Missing bundled sellwand.yml resource."); }
+        }
+        sellWandConfig = YamlConfiguration.loadConfiguration(file);
+    }
+
     private ItemStack createWand(int uses) {
-        ItemStack item = new ItemStack(Material.NETHERITE_AXE);
+        Material material = parseMaterial(sellWandConfig.getString("item.material", "NETHERITE_AXE"), Material.NETHERITE_AXE);
+        if (!material.isItem() || material.isAir()) material = Material.NETHERITE_AXE;
+        ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(color("&#A503FCᴀᴍᴇᴛʜʏsᴛ sᴇʟʟᴀxᴇ"));
+        meta.setDisplayName(color(sellWandConfig.getString("item.name", "&#A503FCᴀᴍᴇᴛʜʏsᴛ sᴇʟʟᴀxᴇ")));
         meta.setLore(wandLore(uses));
-        meta.addEnchant(Enchantment.EFFICIENCY, 5, true);
-        meta.addEnchant(Enchantment.UNBREAKING, 3, true);
-        meta.addEnchant(Enchantment.MENDING, 1, true);
+        for (String line : sellWandConfig.getStringList("item.enchantments")) {
+            String[] parts = line.split(":", 2);
+            if (parts.length != 2) continue;
+            Enchantment enchantment = Enchantment.getByName(parts[0].trim().toUpperCase(Locale.ROOT));
+            if (enchantment == null) continue;
+            try {
+                int level = Integer.parseInt(parts[1].trim());
+                if (level > 0) meta.addEnchant(enchantment, level, true);
+            } catch (NumberFormatException ignored) { }
+        }
         meta.getPersistentDataContainer().set(wandKey, PersistentDataType.BYTE, (byte) 1);
         meta.getPersistentDataContainer().set(usesKey, PersistentDataType.INTEGER, uses);
         item.setItemMeta(meta);
@@ -681,7 +705,11 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
     }
 
     private List<String> wandLore(int uses) {
-        return List.of(color("&7Instantly sell priced items inside a chest."), color("&7The chest is not broken."), color(""), color("&7Uses remaining: &d" + uses), color("&eLeft- or right-click a chest to sell"));
+        List<String> lore = new ArrayList<>();
+        for (String line : sellWandConfig.getStringList("item.lore")) {
+            lore.add(color(line.replace("{uses}", Integer.toString(uses))));
+        }
+        return lore;
     }
 
     private boolean isWand(ItemStack item) {
@@ -731,7 +759,19 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         return getConfig().getString("settings.currency-symbol", "$") + compactAmount(amount);
     }
 
-    private String color(String text) { return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text); }
+    private String color(String text) {
+        String input = text == null ? "" : text;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?i)&#([0-9a-f]{6})").matcher(input);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String hex = matcher.group(1);
+            StringBuilder replacement = new StringBuilder("§x");
+            for (char c : hex.toCharArray()) replacement.append('§').append(c);
+            matcher.appendReplacement(output, java.util.regex.Matcher.quoteReplacement(replacement.toString()));
+        }
+        matcher.appendTail(output);
+        return ChatColor.translateAlternateColorCodes('&', output.toString());
+    }
 
     private void message(CommandSender sender, String path, String... replacements) {
         String prefix = color(getConfig().getString("messages.prefix", "&8[&dFlipSell&8] &r"));
