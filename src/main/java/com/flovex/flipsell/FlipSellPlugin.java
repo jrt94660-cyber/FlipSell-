@@ -16,6 +16,8 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
 import org.bukkit.block.Chest;
+import org.bukkit.block.Container;
+import org.bukkit.loot.Lootable;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
@@ -632,11 +634,32 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if ((action != Action.RIGHT_CLICK_BLOCK && action != Action.LEFT_CLICK_BLOCK) || event.getClickedBlock() == null) return;
         ItemStack held = event.getItem();
         if (!isWand(held)) return;
-        if (!(event.getClickedBlock().getState() instanceof Chest chest)) return;
+        // Any vanilla block-backed container is supported: chests (including trapped
+        // and naturally generated loot chests), barrels, shulker boxes, hoppers,
+        // dispensers, droppers, furnaces and other Container blocks. Ender chests
+        // are deliberately excluded because they are player-owned inventories.
+        if (!(event.getClickedBlock().getState() instanceof Container blockContainer)) return;
         event.setCancelled(true);
         Player player = event.getPlayer();
+        Inventory container = blockContainer.getInventory();
+        if (container == null) return;
+
+        // Loot-table chests generate their contents when first opened. Open them
+        // once and sell on the following tick so the generated loot is included.
+        if (blockContainer instanceof Lootable lootable && lootable.getLootTable() != null) {
+            player.openInventory(container);
+            Bukkit.getScheduler().runTask(this, () -> {
+                if (player.getOpenInventory().getTopInventory() == container) player.closeInventory();
+                sellContainerContents(player, held, container);
+            });
+            return;
+        }
+        sellContainerContents(player, held, container);
+    }
+
+    private void sellContainerContents(Player player, ItemStack held, Inventory container) {
+        if (!player.isOnline() || !isWand(held)) return;
         if (economy == null && !setupEconomy()) { message(player, "no-economy"); return; }
-        Inventory container = chest.getInventory(); // includes both halves of a double chest
         int itemCount = 0;
         double total = 0.0;
         for (ItemStack item : container.getStorageContents()) {
@@ -647,7 +670,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         if (itemCount == 0 || total <= 0.0) { message(player, "wand-empty"); return; }
         EconomyResponse response = economy.depositPlayer((OfflinePlayer) player, total);
         if (response == null || !response.transactionSuccess()) {
-            player.sendMessage(color("&cThe economy rejected the sale. Nothing was removed from the chest."));
+            player.sendMessage(color("&cThe economy rejected the sale. Nothing was removed from the container."));
             return;
         }
         ItemStack[] contents = container.getStorageContents();
@@ -658,14 +681,14 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         container.setStorageContents(contents);
         int uses = Math.max(0, held.getItemMeta().getPersistentDataContainer().getOrDefault(usesKey, PersistentDataType.INTEGER, 1) - 1);
         if (uses == 0) {
-            player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+            if (player.getInventory().getItemInMainHand().isSimilar(held)) player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
             message(player, "wand-exhausted");
         } else {
             ItemMeta meta = held.getItemMeta();
             meta.getPersistentDataContainer().set(usesKey, PersistentDataType.INTEGER, uses);
             meta.setLore(wandLore(uses));
             held.setItemMeta(meta);
-            player.getInventory().setItemInMainHand(held);
+            if (player.getInventory().getItemInMainHand().isSimilar(held)) player.getInventory().setItemInMainHand(held);
             message(player, "wand-sold", "{items}", Integer.toString(itemCount), "{total}", money(total), "{uses}", Integer.toString(uses));
         }
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8f, 1.4f);
