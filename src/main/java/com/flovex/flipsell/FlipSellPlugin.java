@@ -544,10 +544,12 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         // Migrate older lore versions to one canonical line at the end. The
         // same material + same original metadata now gets identical lore/PDC,
         // regardless of stack size or the old insertion index.
-        if (oldLine != null) lore.remove(oldLine);
-        if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < lore.size()) {
+        if (oldLine != null) {
+            lore.remove(oldLine);
+        } else if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < lore.size()) {
             String possibleLegacyLine = lore.get(legacyIndex);
-            if (possibleLegacyLine.equals(line) || possibleLegacyLine.contains("each")) {
+            String plain = ChatColor.stripColor(possibleLegacyLine);
+            if (plain != null && plain.startsWith("$ ") && plain.endsWith(" each")) {
                 lore.remove((int) legacyIndex);
             }
         }
