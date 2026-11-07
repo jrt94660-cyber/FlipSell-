@@ -197,6 +197,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
             if (!player.isOnline()) return;
             // Decorate the player's inventory and only vanilla block-backed
             // containers. Never touch custom plugin shop inventories (e.g. SMPShop).
+            mergePlayerStacksWithoutWorthMetadata(player);
             updatePlayerWorthLore(player);
             updateVanillaContainerWorthLore(player.getOpenInventory().getTopInventory());
         });
@@ -208,6 +209,7 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         Bukkit.getScheduler().runTask(this, () -> {
             if (!player.isOnline()) return;
             // Refresh the player inventory and a vanilla block container after the drag.
+            mergePlayerStacksWithoutWorthMetadata(player);
             updatePlayerWorthLore(player);
             updateVanillaContainerWorthLore(player.getOpenInventory().getTopInventory());
         });
@@ -488,6 +490,64 @@ public final class FlipSellPlugin extends JavaPlugin implements Listener, TabExe
         player.sendMessage(color("&7Full stack (" + material.getMaxStackSize() + "): &a$ &f" + compactAmount(stack)));
         player.sendMessage(color("&8&m--------------------------------"));
         openWorthMenu(player, material);
+    }
+
+    /**
+     * FlipSell's worth lore is presentation metadata, not part of item identity.
+     * Remove only FlipSell-owned worth data while consolidating the player's storage,
+     * then restore it after the stacks have been merged.
+     */
+    private void mergePlayerStacksWithoutWorthMetadata(Player player) {
+        org.bukkit.inventory.PlayerInventory inventory = player.getInventory();
+        ItemStack[] contents = inventory.getStorageContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (contents[i] == null || contents[i].getType().isAir()) continue;
+            contents[i] = contents[i].clone();
+            removeWorthMetadata(contents[i]);
+        }
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack target = contents[i];
+            if (target == null || target.getType().isAir()) continue;
+            int max = target.getMaxStackSize();
+            for (int j = i + 1; j < contents.length && target.getAmount() < max; j++) {
+                ItemStack source = contents[j];
+                if (source == null || source.getType().isAir() || !target.isSimilar(source)) continue;
+                int moved = Math.min(max - target.getAmount(), source.getAmount());
+                target.setAmount(target.getAmount() + moved);
+                int remaining = source.getAmount() - moved;
+                contents[j] = remaining <= 0 ? null : source;
+                if (remaining > 0) source.setAmount(remaining);
+            }
+            contents[i] = target;
+        }
+        inventory.setStorageContents(contents);
+    }
+
+    private void removeWorthMetadata(ItemStack item) {
+        if (item == null || item.getType().isAir() || !item.hasItemMeta()) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+        var pdc = meta.getPersistentDataContainer();
+        String ownedLine = pdc.get(worthLineKey, PersistentDataType.STRING);
+        Integer legacyIndex = pdc.get(worthIndexKey, PersistentDataType.INTEGER);
+        boolean hadOwnedData = pdc.has(worthLoreKey, PersistentDataType.BYTE)
+                || ownedLine != null || legacyIndex != null;
+        if (!hadOwnedData) return;
+        List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+        if (ownedLine != null) {
+            lore.remove(ownedLine);
+        } else if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < lore.size()) {
+            String possible = lore.get(legacyIndex);
+            String plain = ChatColor.stripColor(possible);
+            if (plain != null && plain.startsWith("$ ") && plain.endsWith(" each")) {
+                lore.remove((int) legacyIndex);
+            }
+        }
+        pdc.remove(worthLoreKey);
+        pdc.remove(worthLineKey);
+        pdc.remove(worthIndexKey);
+        meta.setLore(lore.isEmpty() ? null : lore);
+        item.setItemMeta(meta);
     }
 
     private void updatePlayerWorthLore(Player player) {
